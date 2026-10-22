@@ -1,0 +1,19 @@
+{
+  "localVariables": [
+    {
+      "name": "webhook_secret_key",
+      "type": "String",
+      "value": "MKM-QRIS-SECRET-2026-KEY99"
+    },
+    {
+      "name": "pc_server_url",
+      "type": "String",
+      "value": "http://192.168.1.100:3000/api/webhook/macrodroid"
+    }
+  ],
+  "macro": {
+    "name": "QRIS MEGAKOMINDO Auto Verifier (VO Studio)",
+    "isEnabled": true,
+    "secret": "MKM-QRIS-SECRET-2026-KEY99"
+  }
+}

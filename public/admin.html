@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dasbor Superadmin - VO Affiliate Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script>
+        tailwind.config = { darkMode: 'class', theme: { extend: { colors: { brand: { 500:'#6366f1',600:'#4f46e5' } } } } }
+    </script>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="min-h-screen bg-slate-950 text-white">
+    <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-10">
+        <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-crown text-purple-400"></i>
+                <h1 class="font-extrabold text-sm sm:text-base">Dasbor Superadmin</h1>
+                <span id="adminEmailLabel" class="hidden sm:inline text-[11px] text-slate-400 font-mono"></span>
+            </div>
+            <a href="app.html" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold transition">
+                <i class="fa-solid fa-arrow-left mr-1"></i> Kembali ke Studio
+            </a>
+        </div>
+    </header>
+
+    <main class="max-w-4xl mx-auto px-4 py-6 space-y-6">
+        <!-- Statistik -->
+        <section class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                <p class="text-[11px] uppercase font-bold text-slate-500">Total User</p>
+                <p id="statUsers" class="text-2xl font-black text-brand-400">-</p>
+            </div>
+            <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                <p class="text-[11px] uppercase font-bold text-slate-500">Total Generasi</p>
+                <p id="statGenerations" class="text-2xl font-black text-amber-400">-</p>
+            </div>
+            <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                <p class="text-[11px] uppercase font-bold text-slate-500">Saldo Agregat</p>
+                <p id="statBalance" class="text-2xl font-black text-emerald-400">-</p>
+            </div>
+        </section>
+
+        <!-- Koreksi credit -->
+        <section class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+            <h2 class="text-sm font-bold"><i class="fa-solid fa-coins text-emerald-400 mr-1"></i> Koreksi Manual Credit</h2>
+            <form id="adjustForm" class="flex flex-col sm:flex-row gap-2">
+                <input id="adjustEmail" type="email" required placeholder="email@user.com" class="flex-1 px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs outline-none focus:border-brand-500">
+                <input id="adjustDelta" type="number" required placeholder="Delta (mis. +5000 / -1200)" class="w-full sm:w-44 px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs outline-none focus:border-brand-500">
+                <button type="submit" class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-bold transition">Terapkan</button>
+            </form>
+            <p id="adjustResult" class="text-[11px] text-slate-500"></p>
+        </section>
+
+        <!-- Daftar user -->
+        <section class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+            <h2 class="text-sm font-bold"><i class="fa-solid fa-users text-brand-400 mr-1"></i> Daftar User</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead class="text-slate-500 uppercase text-[10px]">
+                        <tr>
+                            <th class="py-2 pr-3">Email</th>
+                            <th class="py-2 pr-3">Nama</th>
+                            <th class="py-2 pr-3 text-right">Saldo</th>
+                            <th class="py-2 pr-3 text-right">Generasi</th>
+                            <th class="py-2">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody" class="divide-y divide-slate-800"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <div id="accessDenied" class="hidden fixed inset-0 z-50 bg-slate-950 flex items-center justify-center p-6">
+        <div class="text-center space-y-3 max-w-sm">
+            <i class="fa-solid fa-ban text-4xl text-rose-500"></i>
+            <h2 class="font-extrabold text-lg">Akses Ditolak</h2>
+            <p class="text-xs text-slate-400">Halaman ini khusus akun superadmin (credit tanpa batas). Login dengan akun yang terdaftar di <code>SUPERADMIN_EMAILS</code>.</p>
+            <a href="index.html" class="inline-block px-4 py-2 rounded-xl bg-brand-600 text-xs font-bold">Ke Landing</a>
+        </div>
+    </div>
+
+    <script>
+        const rp = n => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
+
+        async function loadDashboard() {
+            let me;
+            try {
+                const r = await fetch('/api/me', { credentials: 'same-origin' });
+                if (!r.ok) throw new Error('no-session');
+                me = await r.json();
+            } catch (e) {
+                location.href = 'index.html'; return;
+            }
+            if (!me.unlimited) {
+                document.getElementById('accessDenied').classList.remove('hidden');
+                return;
+            }
+            document.getElementById('adminEmailLabel').textContent = me.email;
+
+            const [stats, users] = await Promise.all([
+                fetch('/api/admin/stats', { credentials: 'same-origin' }).then(r => r.json()),
+                fetch('/api/admin/users', { credentials: 'same-origin' }).then(r => r.json()),
+            ]);
+            document.getElementById('statUsers').textContent = stats.totalUsers;
+            document.getElementById('statGenerations').textContent = stats.totalGenerations;
+            document.getElementById('statBalance').textContent = rp(stats.totalBalance);
+
+            document.getElementById('usersTableBody').innerHTML = (users.users || []).map(u => `
+                <tr>
+                    <td class="py-2 pr-3 font-mono">${u.email}</td>
+                    <td class="py-2 pr-3">${u.name || '-'}</td>
+                    <td class="py-2 pr-3 text-right font-bold ${u.unlimited ? 'text-purple-400' : 'text-emerald-400'}">${u.unlimited ? '&#8734; Tanpa Batas' : rp(u.balance)}</td>
+                    <td class="py-2 pr-3 text-right">${u.total_gen}</td>
+                    <td class="py-2">${u.unlimited ? '<span class="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 text-[10px] font-bold">SUPERADMIN</span>' : '<span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px]">USER</span>'}</td>
+                </tr>
+            `).join('') || '<tr><td colspan="5" class="py-4 text-center text-slate-500">Belum ada user.</td></tr>';
+        }
+
+        document.getElementById('adjustForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('adjustEmail').value.trim();
+            const delta = parseInt(document.getElementById('adjustDelta').value, 10);
+            const out = document.getElementById('adjustResult');
+            out.textContent = 'Memproses...';
+            try {
+                const r = await fetch('/api/admin/adjust-credit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ email, delta })
+                });
+                const d = await r.json();
+                out.textContent = r.ok ? `OK - saldo ${d.email} kini ${rp(d.balance)}.` : 'Gagal: ' + (d.error || r.status);
+                if (r.ok) loadDashboard();
+            } catch (err) {
+                out.textContent = 'Gagal menghubungi server.';
+            }
+        });
+
+        window.addEventListener('load', loadDashboard);
+    </script>
+</body>
+</html>

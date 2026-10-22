@@ -1,0 +1,25 @@
+{
+  "name": "vo-affiliate-studio",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "VO Affiliate Studio Enterprise - Voice Over generator dengan analisa video AI (Gemini + fallback AIVene), pembayaran QRIS terverifikasi MacroDroid, dan login Google OAuth multi-tenant (Cloudflare Worker)",
+  "main": "worker/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 execute vo-studio-db --local --file=./schema.sql",
+    "db:migrate:remote": "wrangler d1 execute vo-studio-db --remote --file=./schema.sql"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "jose": "^5.9.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.152.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "workerd@1.20261019.1": true
+  }
+}

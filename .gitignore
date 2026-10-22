@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.*
+.dev.vars
+.wrangler/
+*.log
+uploads/
+exports/
+*.webm
+*.mp4
+*.wav
+*.srt
+.DS_Store
+Thumbs.db
+.vscode/

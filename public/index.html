@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VO Affiliate Studio - Voice Over AI + Analisa Video untuk Affiliate</title>
+    <meta name="description" content="Ubah video produk jadi Voice Over beremosi, caption, dan hashtag otomatis dengan AI. Login Google, bayar QRIS per pemakaian.">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { colors: { brand: { 50:'#eef2ff',100:'#e0e7ff',500:'#6366f1',600:'#4f46e5',700:'#4338ca',850:'#1e1b4b',900:'#0f172a' } } } }
+        }
+    </script>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="min-h-screen bg-slate-950 text-white selection:bg-brand-500 selection:text-white flex flex-col">
+
+    <!-- NAVBAR -->
+    <nav class="max-w-5xl mx-auto w-full px-4 sm:px-6 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-purple-600 flex items-center justify-center shadow-lg shadow-brand-500/30">
+                <i class="fa-solid fa-microphone-lines text-white"></i>
+            </div>
+            <span class="font-extrabold text-base tracking-tight">VO Affiliate Studio</span>
+        </div>
+        <div id="navLoginSlot" class="flex items-center gap-2">
+            <button onclick="scrollToLogin()" class="px-3.5 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-xs font-bold transition">Masuk</button>
+        </div>
+    </nav>
+
+    <!-- HERO -->
+    <main class="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6">
+        <section class="text-center pt-10 sm:pt-16 pb-10 space-y-4">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-500/15 border border-brand-500/30 text-brand-300 text-[11px] font-bold uppercase tracking-wider">
+                <i class="fa-solid fa-bolt"></i> Didukung Gemini AI + Fallback Qwen
+            </span>
+            <h1 class="text-3xl sm:text-5xl font-extrabold leading-tight tracking-tight">
+                Video Produk Biasa &rarr; <span class="bg-gradient-to-r from-brand-400 to-purple-400 bg-clip-text text-transparent">VO Viral Beremosi</span>
+            </h1>
+            <p class="text-sm sm:text-base text-slate-400 max-w-xl mx-auto leading-relaxed">
+                Upload video affiliate Anda. AI menganalisa adegan, lalu menyusun naskah Voice Over 3 pola emosi, caption, dan hashtag &mdash; siap tempel ke TikTok &amp; Shopee Video.
+            </p>
+            <div class="pt-2">
+                <button onclick="scrollToLogin()" class="px-6 py-3 rounded-2xl bg-gradient-to-r from-brand-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 font-extrabold text-sm shadow-xl shadow-brand-600/30 transition">
+                    <i class="fa-solid fa-rocket mr-1"></i> Mulai Gratis, Bayar Per Pemakaian
+                </button>
+            </div>
+        </section>
+
+        <!-- FITUR -->
+        <section class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 pb-10">
+            <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+                <div class="w-10 h-10 rounded-xl bg-brand-500/15 flex items-center justify-center"><i class="fa-solid fa-film text-brand-400"></i></div>
+                <h3 class="font-bold text-sm">Analisa Video AI</h3>
+                <p class="text-xs text-slate-400 leading-relaxed">Frame video diekstrak di perangkat Anda (hemat kuota), lalu dianalisa Gemini dengan fallback Qwen3.8-Flash.</p>
+            </div>
+            <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+                <div class="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center"><i class="fa-solid fa-face-smile text-amber-400"></i></div>
+                <h3 class="font-bold text-sm">VO 3 Pola Emosi</h3>
+                <p class="text-xs text-slate-400 leading-relaxed">Hook yang prihatin, solusi meyakinkan, CTA mendesak &mdash; plus caption &amp; hashtag otomatis per produk.</p>
+            </div>
+            <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+                <div class="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center"><i class="fa-solid fa-qrcode text-emerald-400"></i></div>
+                <h3 class="font-bold text-sm">QRIS Auto-Verifikasi</h3>
+                <p class="text-xs text-slate-400 leading-relaxed">Top up saldo dengan kode unik 2 digit. Transfer pas &rarr; MacroDroid verifikasi otomatis, saldo langsung masuk.</p>
+            </div>
+        </section>
+
+        <!-- HARGA -->
+        <section class="pb-12 text-center space-y-4">
+            <h2 class="text-lg sm:text-xl font-extrabold">Harga Transparan Per Generasi</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl mx-auto">
+                <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                    <p class="text-[11px] font-bold text-slate-400 uppercase">Flash 3.1</p>
+                    <p class="text-2xl font-black text-emerald-400">Rp 1.200<span class="text-xs font-medium text-slate-500">/VO</span></p>
+                </div>
+                <div class="p-4 rounded-2xl bg-slate-900 border border-brand-500/50 relative">
+                    <span class="absolute -top-2 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-brand-600 rounded-full text-[9px] font-extrabold">TERPOPULER</span>
+                    <p class="text-[11px] font-bold text-slate-400 uppercase">Flash 3.7</p>
+                    <p class="text-2xl font-black text-emerald-400">Rp 1.500<span class="text-xs font-medium text-slate-500">/VO</span></p>
+                </div>
+                <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                    <p class="text-[11px] font-bold text-slate-400 uppercase">Flash 3.8</p>
+                    <p class="text-2xl font-black text-emerald-400">Rp 1.800<span class="text-xs font-medium text-slate-500">/VO</span></p>
+                </div>
+            </div>
+            <p class="text-[11px] text-slate-500">Riwayat proyek tersimpan privat per akun Google Anda &mdash; multi-tenant di perangkat ini.</p>
+        </section>
+
+        <!-- LOGIN -->
+        <section id="loginSection" class="pb-16 max-w-md mx-auto">
+            <div class="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl space-y-4 text-center">
+                <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand-500 to-purple-600 mx-auto flex items-center justify-center shadow-lg shadow-brand-500/30">
+                    <i class="fa-solid fa-right-to-bracket text-white text-lg"></i>
+                </div>
+                <div>
+                    <h2 class="font-extrabold text-base">Masuk untuk Mulai</h2>
+                    <p class="text-xs text-slate-400 mt-1">Login dengan akun Google &mdash; tanpa password, data Anda terpisah per akun.</p>
+                </div>
+                <div id="googleBtnContainer" class="flex justify-center min-h-[44px] items-center">
+                    <p id="loginHint" class="text-[11px] text-slate-500"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Menyiapkan tombol Google&hellip;</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="border-t border-slate-900 py-5 text-center text-[11px] text-slate-600">
+        &copy; 2026 MEGAKOMINDO &middot; VO Affiliate Studio Enterprise
+    </footer>
+
+    <script>
+        // ===== Landing: cek sesi -> auto masuk app; GIS login -> tukar credential ke Worker =====
+        async function checkSession() {
+            try {
+                const r = await fetch('/api/me', { credentials: 'same-origin' });
+                if (r.ok) { location.replace('app.html'); return true; }
+            } catch (e) {}
+            return false;
+        }
+
+        function scrollToLogin() {
+            document.getElementById('loginSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        async function initGoogleLogin() {
+            let clientId = '';
+            try {
+                const r = await fetch('/api/auth/config', { credentials: 'same-origin' });
+                clientId = (await r.json()).clientId || '';
+            } catch (e) {}
+            const hint = document.getElementById('loginHint');
+            if (!clientId) {
+                if (hint) hint.innerHTML = 'Konfigurasi OAuth belum tersedia. Set <code>GOOGLE_CLIENT_ID</code> pada Worker (lihat README).';
+                return;
+            }
+            // GIS dimuat async; tunggu global google siap (maks ~5 dtk) sebelum merender tombol.
+            const gisReady = await new Promise(res => {
+                let n = 0;
+                (function tick() {
+                    if (window.google && window.google.accounts && google.accounts.id) return res(true);
+                    if (n++ >= 25) return res(false);
+                    setTimeout(tick, 200);
+                })();
+            });
+            if (!gisReady) {
+                if (hint) hint.innerHTML = 'Pustaka Google Sign-In gagal dimuat &mdash; butuh koneksi internet ke <code>accounts.google.com</code>. Muat ulang halaman.';
+                return;
+            }
+            google.accounts.id.initialize({
+                client_id: clientId,
+                callback: async (resp) => {
+                    try {
+                        const r = await fetch('/api/auth/session', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'same-origin',
+                            body: JSON.stringify({ credential: resp.credential })
+                        });
+                        if (r.ok) { location.href = 'app.html'; return; }
+                        const d = await r.json().catch(() => ({}));
+                        if (hint) hint.innerHTML = 'Login gagal: ' + (d.detail || d.error || 'tidak diketahui');
+                    } catch (e) {
+                        if (hint) hint.textContent = 'Server tidak terjangkau.';
+                    }
+                }
+            });
+            google.accounts.id.renderButton(document.getElementById('googleBtnContainer'), {
+                theme: 'filled_black', size: 'large', shape: 'pill', text: 'signin_with', width: 280
+            });
+            if (hint) hint.remove();
+        }
+
+        window.addEventListener('load', async () => {
+            const loggedIn = await checkSession();
+            if (!loggedIn) initGoogleLogin();
+        });
+    </script>
+</body>
+</html>

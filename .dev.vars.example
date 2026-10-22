@@ -1,0 +1,7 @@
+# .dev.vars.example - Salin jadi ".dev.vars" untuk pengembangan lokal (npx wrangler dev)
+# File ini TIDAK pernah di-commit / diunduh (dirasakan .gitignore).
+GEMINI_API_KEY=ISI_GEMINI_API_KEY_DISINI
+AIVENE_API_KEY=ISI_AIVENE_API_KEY_DISINI
+SESSION_SECRET=ganti-dengan-string-acak-panjang-untuk-hmac-sesi
+MACRODROID_SECRET_KEY=MKM-QRIS-SECRET-2026-KEY99
+# Untuk produksi gunakan: npx wrangler secret put <NAMA>
