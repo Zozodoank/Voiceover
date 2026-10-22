@@ -447,40 +447,47 @@
                         </div>
                     </div>
 
-                    <div class="space-y-2.5">
+                    <div class="space-y-2">
                         <div class="flex items-center justify-between gap-2">
-                            <label class="text-xs font-semibold text-slate-300">Pilih Suara &amp; Preview 3 Kata</label>
-                            <span class="text-[11px] text-slate-400">"Halo sobat belanja!"</span>
+                            <label class="text-xs font-semibold text-slate-300">Pilih Voice Over (Gemini TTS)</label>
+                            <span class="text-[11px] text-slate-400"><i class="fa-solid fa-headphones"></i> Klik &#9658; untuk dengar</span>
                         </div>
-                        <div class="p-3 rounded-xl border border-slate-700 bg-slate-950 flex items-center justify-between gap-2.5">
-                            <label class="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0">
-                                <input type="radio" name="voiceGender" value="female" checked="" class="w-4 h-4 text-brand-600 bg-slate-800 border-slate-600 shrink-0">
-                                <div class="w-8 h-8 rounded-lg bg-pink-500/15 border border-pink-500/30 text-pink-400 flex items-center justify-center shrink-0">
-                                    <i class="fa-solid fa-venus"></i>
-                                </div>
-                                <div class="min-w-0">
-                                    <div class="text-xs font-semibold text-white">Wanita (Kore)</div>
-                                    <div class="text-[11px] text-slate-400 truncate">Ramah &amp; Ceria</div>
+                        <div id="voicePicker" class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-64 overflow-y-auto pr-1">
+                            <div class="text-[11px] text-slate-500 py-3 text-center sm:col-span-2">Memuat daftar suara…</div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <label class="block text-xs font-semibold text-slate-300">Platform Tujuan (menentukan CTA)</label>
+                        <div class="grid grid-cols-4 gap-2" id="ctaPlatformGrid">
+                            <label class="cursor-pointer">
+                                <input type="radio" name="ctaPlatform" value="shopee" checked="" class="peer sr-only">
+                                <div class="p-2 rounded-xl border border-slate-700 bg-slate-950 peer-checked:border-brand-500 peer-checked:bg-brand-500/10 transition text-center">
+                                    <div class="text-xs font-bold text-white">Shopee</div>
+                                    <div class="text-[10px] text-slate-400 mt-0.5">Keranjang Orange</div>
                                 </div>
                             </label>
-                            <button type="button" onclick="playThreeWordPreview('female')" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 flex items-center gap-1.5 shrink-0">
-                                <i class="fa-solid fa-volume-high text-pink-400"></i> Preview
-                            </button>
-                        </div>
-                        <div class="p-3 rounded-xl border border-slate-700 bg-slate-950 flex items-center justify-between gap-2.5">
-                            <label class="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0">
-                                <input type="radio" name="voiceGender" value="male" class="w-4 h-4 text-brand-600 bg-slate-800 border-slate-600 shrink-0">
-                                <div class="w-8 h-8 rounded-lg bg-sky-500/15 border border-sky-500/30 text-sky-400 flex items-center justify-center shrink-0">
-                                    <i class="fa-solid fa-mars"></i>
-                                </div>
-                                <div class="min-w-0">
-                                    <div class="text-xs font-semibold text-white">Pria (Puck)</div>
-                                    <div class="text-[11px] text-slate-400 truncate">Tegas &amp; Meyakinkan</div>
+                            <label class="cursor-pointer">
+                                <input type="radio" name="ctaPlatform" value="tiktok" class="peer sr-only">
+                                <div class="p-2 rounded-xl border border-slate-700 bg-slate-950 peer-checked:border-brand-500 peer-checked:bg-brand-500/10 transition text-center">
+                                    <div class="text-xs font-bold text-white">TikTok</div>
+                                    <div class="text-[10px] text-slate-400 mt-0.5">Keranjang Kuning</div>
                                 </div>
                             </label>
-                            <button type="button" onclick="playThreeWordPreview('male')" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 flex items-center gap-1.5 shrink-0">
-                                <i class="fa-solid fa-volume-high text-sky-400"></i> Preview
-                            </button>
+                            <label class="cursor-pointer">
+                                <input type="radio" name="ctaPlatform" value="reels" class="peer sr-only">
+                                <div class="p-2 rounded-xl border border-slate-700 bg-slate-950 peer-checked:border-brand-500 peer-checked:bg-brand-500/10 transition text-center">
+                                    <div class="text-xs font-bold text-white">Reels</div>
+                                    <div class="text-[10px] text-slate-400 mt-0.5">CTA Bebas</div>
+                                </div>
+                            </label>
+                            <label class="cursor-pointer">
+                                <input type="radio" name="ctaPlatform" value="youtube" class="peer sr-only">
+                                <div class="p-2 rounded-xl border border-slate-700 bg-slate-950 peer-checked:border-brand-500 peer-checked:bg-brand-500/10 transition text-center">
+                                    <div class="text-xs font-bold text-white">YouTube</div>
+                                    <div class="text-[10px] text-slate-400 mt-0.5">CTA Bebas</div>
+                                </div>
+                            </label>
                         </div>
                     </div>
 
@@ -674,6 +681,7 @@
     <script src="js/auth.js"></script>
     <script src="js/payment.js"></script>
     <script src="js/frames.js"></script>
+    <script src="js/voices.js"></script>
     <script src="js/studio.js"></script>
     <script src="js/playback.js"></script>
     <script src="js/deploy.js"></script>

@@ -1,5 +1,5 @@
 // public/js/frames.js - Ekstraksi frame video di SISI BROWSER (hemat kuota & aman untuk limit
-// request API AI): sample 1 FPS, turunke JPEG <=768px, maks 16 frame. Tanpa ffmpeg.
+// request API AI): sample 1 FPS, turunke JPEG <=384px, maks 8 frame. Tanpa ffmpeg.
 
 function _waitVideoEvent(video, event, timeoutMs) {
     return new Promise((resolve, reject) => {
@@ -21,7 +21,7 @@ function _waitVideoEvent(video, event, timeoutMs) {
  * @returns Promise<Array<{t:number, dataUrl:string}>) - dataUrl "data:image/jpeg;base64,..."
  */
 async function extractFrames(source, opts) {
-    const options = Object.assign({ fps: 1, maxFrames: 16, width: 768, quality: 0.7 }, opts || {});
+    const options = Object.assign({ fps: 1, maxFrames: 8, width: 384, quality: 0.7 }, opts || {});
     const url = typeof source === 'string' ? source : URL.createObjectURL(source);
     const ownsBlob = typeof source !== 'string';
 

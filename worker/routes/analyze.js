@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { requireAuth } from '../lib/middleware.js';
 import { getUser, tryDeductBalance, countGeneration } from '../lib/db.js';
 import { analyzeVideo } from '../lib/ai.js';
+import { getVoice } from '../lib/tts.js';
 
 const router = new Hono();
 
@@ -39,6 +40,13 @@ router.post('/analyze', requireAuth, async (c) => {
     const productName = String(body.productName || '').trim();
     if (!productName) return c.json({ error: 'Nama produk wajib diisi' }, 400);
 
+    const platform = ['shopee', 'tiktok', 'reels', 'youtube'].includes(body.platform) ? body.platform : 'shopee';
+
+    // Voice terpilih menentukan gender nada naskah (fallback ke body.gender bila voice tak dikenal)
+    const voiceName = typeof body.voiceName === 'string' ? body.voiceName : '';
+    const voice = getVoice(voiceName);
+    const gender = voice ? voice.gender : (body.gender === 'female' ? 'female' : 'male');
+
     const price = PRICES[body.modelValue] != null ? PRICES[body.modelValue] : 1200;
     const unlimited = !!session.unlimited;
 
@@ -57,7 +65,9 @@ router.post('/analyze', requireAuth, async (c) => {
             productName,
             affiliateLink: String(body.affiliateLink || ''),
             duration: Number(body.duration) || 15,
-            gender: body.gender === 'female' ? 'female' : 'male',
+            gender,
+            platform,
+            voiceName,
         });
     } catch (e) {
         // Dua provider gagal: jangan debit apa pun

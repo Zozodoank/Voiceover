@@ -10,5 +10,6 @@ window.onload = async function () {
     loadHistoryFromStorage();
     applySessionToHeader();
     updateHistoryBadge();
+    renderVoicePicker();
     document.getElementById('loadDemoBtn').click();
 };

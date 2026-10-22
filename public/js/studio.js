@@ -1,19 +1,5 @@
 // public/js/studio.js - Upload/demo video, generator VO & timeline adegan
-function playThreeWordPreview(gender) {
-    const synth = window.speechSynthesis;
-    if (!synth) {
-        showToast('Browser SpeechSynthesis tidak didukung', 'error');
-        return;
-    }
-    const utterance = new SpeechSynthesisUtterance("Halo sobat belanja!");
-    utterance.lang = 'id-ID';
-    utterance.rate = 1.0;
-    const voices = synth.getVoices();
-    const indonesianVoice = voices.find(v => v.lang.includes('id') || v.lang.includes('ID'));
-    if (indonesianVoice) utterance.voice = indonesianVoice;
-    synth.speak(utterance);
-    showToast(`Memutar preview 3 kata (${gender === 'female' ? 'Wanita' : 'Pria'})...`, 'info');
-}
+// Pratinjau & pemutaran suara kini memakai Gemini TTS asli via previewVoice()/getSelectedVoice() (voices.js).
 
 document.getElementById('loadDemoBtn').addEventListener('click', () => {
     isUsingDemoVideo = true;
@@ -60,7 +46,10 @@ async function initiateCommercialGeneration() {
     const modelValue = selectedModelRadio.value;
     const modelPrice = parseInt(selectedModelRadio.getAttribute('data-price'), 10);
     const modelName = selectedModelRadio.parentElement.querySelector('.text-xs.font-bold').innerText;
-    const gender = document.querySelector('input[name="voiceGender"]:checked').value;
+    const selectedVoice = getSelectedVoice();
+    const gender = selectedVoice.gender;
+    const voiceName = selectedVoice.name;
+    const platform = (document.querySelector('input[name="ctaPlatform"]:checked') || {}).value || 'shopee';
 
     // Gerbang saldo hanya cermin UI - Worker tetap memvalidasi & mendebit dari D1
     if (!userUnlimited && userBalance < modelPrice) {
@@ -87,7 +76,7 @@ async function initiateCommercialGeneration() {
     let duration = parseFloat(document.getElementById('videoDurationBadge').innerText) || 15;
     try {
         if (uploadedVideoFile) {
-            const frames = await extractFrames(uploadedVideoFile, { fps: 1, maxFrames: 16, width: 768, quality: 0.7 });
+            const frames = await extractFrames(uploadedVideoFile, { fps: 1, maxFrames: 8, width: 384, quality: 0.7 });
             frameDataUrls = frames.map(f => f.dataUrl);
         } else if (isUsingDemoVideo) {
             // Video demo: pakai ilustrasi canvas 3 adegan sebagai frame analisa
@@ -115,6 +104,8 @@ async function initiateCommercialGeneration() {
                 affiliateLink: document.getElementById('affiliateLinkInput').value.trim(),
                 duration,
                 gender,
+                voiceName,
+                platform,
                 modelValue,
                 modelLabel: modelName
             }
@@ -146,7 +137,8 @@ async function initiateCommercialGeneration() {
 
     // Menerapkan Pola Emosi Berbeda di Setiap Adegan (Per Kalimat Voice Over)
     generatedScenesData = r.scenes;
-    generatedCaptionText = r.caption || `Wajib punya! ${productName} — cek keranjang kuning sekarang! ✨`;
+    const platformCtaText = { shopee: 'cek keranjang orange sekarang', tiktok: 'cek keranjang kuning di bawah', reels: 'klik link di bio', youtube: 'subscribe & cek link di deskripsi' }[platform] || 'cek keranjang sekarang';
+    generatedCaptionText = r.caption || `Wajib punya! ${productName} — ${platformCtaText}! ✨`;
     generatedHashtagsText = r.hashtags || `#RacunShopee #${productName.replace(/\s+/g, '')} #FYP #SkincareIndonesia`;
 
     document.getElementById('captionOutput').value = generatedCaptionText;
@@ -158,13 +150,14 @@ async function initiateCommercialGeneration() {
 
     document.getElementById('playMergedBtn').removeAttribute('disabled');
     document.getElementById('exportMergedBtn').removeAttribute('disabled');
-    document.getElementById('activeModelStatusLabel').innerText = `Model: ${modelName} • Suara ${gender === 'female' ? 'Wanita' : 'Pria'} • Emosi Per Adegan Aktif • via ${resp.provider === 'aivene' ? 'AIVene Qwen' : 'Gemini'}`;
+    document.getElementById('activeModelStatusLabel').innerText = `Voice: ${voiceName} • ${gender === 'female' ? 'Wanita' : 'Pria'} • ${platform.toUpperCase()} • Naskah via ${resp.provider === 'aivene' ? 'AIVene Qwen' : ('Gemini · ' + String(resp.provider).split(':')[1])}`;
 
     const newRecord = {
         productName,
         affiliateLink: affLink,
         modelLabel: modelName,
         gender,
+        voiceName,
         researchSummary: generatedProductResearch,
         caption: generatedCaptionText,
         hashtags: generatedHashtagsText,
@@ -201,11 +194,7 @@ function renderScenesTimeline(scenes) {
 }
 
 function playSceneAudio(text, emotion) {
-    const synth = window.speechSynthesis;
-    if (!synth) return;
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = 'id-ID';
-    utter.rate = emotion.includes('Ceria') ? 1.05 : 0.98;
-    synth.speak(utter);
-    showToast(`Memutar naskah (${emotion})...`, 'info');
+    // Dengar naskah adegan dengan voice Gemini TTS yang sedang dipilih (pratinjau gratis, tanpa debit)
+    const v = getSelectedVoice();
+    previewVoice(v.name, null, text);
 }

@@ -3,22 +3,47 @@
 
 const AI_TIMEOUT_MS = 20000;
 
-/** Prompt analisa dalam Bahasa Indonesia, minta JSON terstruktur. */
-export function buildAnalysisPrompt({ productName, affiliateLink, duration, gender, frameTimes }) {
+/** Aturan CTA per platform tujuan - menentukan frasa keranjang yang boleh/tidak boleh. */
+const PLATFORM_CTA = {
+    shopee: {
+        label: 'Shopee Video',
+        rule: 'CTA: akhiri naskah dengan ajakan klik KERANJANG ORANGE (mis. "klik keranjang orange sekarang, stok terbatas!"). DILARANG menyebut "keranjang kuning".',
+    },
+    tiktok: {
+        label: 'TikTok',
+        rule: 'CTA: akhiri naskah dengan ajakan KERANJANG KUNING (mis. "cek keranjang kuning di bawah ya!"). DILARANG menyebut "keranjang orange".',
+    },
+    reels: {
+        label: 'Instagram Reels',
+        rule: 'CTA BEBAS dan bervariasi (mis. "klik link di bio", "simpan video ini", "share ke teman", "komen minat buat link"). DILARANG menyebut keranjang kuning/orange.',
+    },
+    youtube: {
+        label: 'YouTube Shorts',
+        rule: 'CTA BEBAS dan bervariasi (mis. "subscribe & nyalakan lonceng", "klik link di deskripsi", "tonton sampai habis"). DILARANG menyebut keranjang kuning/orange.',
+    },
+};
+
+/** Prompt analisa dalam Bahasa Indonesia: timestamp per adegan + emosi natural + CTA platform. */
+export function buildAnalysisPrompt({ productName, affiliateLink, duration, gender, frameTimes, platform }) {
     const dur = Number(duration) || 15;
     const voice = gender === 'female' ? 'wanita' : 'pria';
+    const cta = PLATFORM_CTA[platform] || PLATFORM_CTA.shopee;
     return [
-        `Kamu adalah ahli copywriting affiliate TikTok/Shopee Video Indonesia.`,
-        `Berikut ${frameTimes.length} frame video produk "${productName}" (durasi ${dur} detik) yang diambil per detik:`,
+        `Kamu adalah ahli copywriting affiliate video Indonesia untuk platform ${cta.label}.`,
+        `Berikut ${frameTimes.length} frame video produk "${productName}" (durasi ${dur} detik):`,
         frameTimes.map((t, i) => `frame ${i + 1} = detik ke-${t}`).join('\n'),
         `Link affiliate: ${affiliateLink || '(kosong)'}`,
-        `Tugas: analisa visual (termasuk teks yang tampil di layar) lalu hasilkan naskah Voice Over untuk suara ${voice}.`,
+        `Analisa visual (termasuk teks yang tampil di layar) lalu hasilkan naskah Voice Over untuk suara ${voice}.`,
+        `TIGA TUGAS UTAMA:`,
+        `1) TIMESTAMP: pecah durasi ${dur} detik menjadi 3-6 adegan BERURUTAN mengikuti perubahan adegan pada frame. Adegan pertama start=0; start tiap adegan = end adegan sebelumnya; adegan TERAKHIR wajib end=${dur}.`,
+        `2) EMOSI NATURAL: isi "emotion" tiap adegan HARUS wajar mengikuti isi visual adegan itu (mis. Penasaran, Prihatin, Heran, Hopeful, Yakin, Antusias, Mendesak), mengalir seperti narator sungguhan - BUKAN pola kaku yang diulang.`,
+        `3) CTA: ${cta.rule} Adegan TERAKHIR wajib memuat kalimat CTA ini, dan "caption" juga memuat CTA yang sama.`,
         `Balik HANYA JSON valid dengan skema:`,
         `{"research":"ringkasan riset produk 1-2 kalimat berbahasa Indonesia",`,
-        `"scenes":[{"start":0,"end":5,"emotion":"Prihatin / Penasaran (Hook)","text":"kalimat VO"}, ...3-5 adegan membagi durasi ${dur} detik secara berurutan],`,
-        `"caption":"caption promosi menarik berbahasa Indonesia",`,
+        `"scenes":[{"start":0,"end":5,"emotion":"Penasaran","text":"kalimat VO"}, ...lalu 3-6 adegan membagi ${dur} detik secara berurutan hingga adegan terakhir end=${dur}],`,
+        `"caption":"caption promosi menarik berbahasa Indonesia, memuat CTA ${cta.label}",`,
         `"hashtags":"#Tag1 #Tag2 ... 5-8 hashtag relevan"}`,
-        `Setiap adegan WAJIB punya pola emosi berbeda (hook, solusi/informatif, desakan CTA). Maksimal 20 kata per kalimat VO.`,
+        `Maksimal 20 kata per kalimat VO.`,
     ].join('\n');
 }
 
@@ -48,6 +73,7 @@ export function normalizeResult(raw, duration) {
         text: String(s.text || '').trim(),
     })).filter(s => s.text);
     if (scenes.length < 2) return null;
+    scenes[scenes.length - 1].end = dur; // pastikan adegan terakhir menutup tepat di akhir durasi
     return {
         research: String(raw.research || '').trim(),
         scenes,
@@ -57,8 +83,7 @@ export function normalizeResult(raw, duration) {
 }
 
 /** Panggil Gemini generateContent dengan frame sebagai inlineData. Lempar jika HTTP bukan 2xx. */
-async function callGemini(env, frames, prompt) {
-    const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
+async function callGemini(env, model, frames, prompt) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`;
     const parts = frames.map(f => {
         const parsed = splitDataUrl(f);
@@ -71,7 +96,7 @@ async function callGemini(env, frames, prompt) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             contents: [{ role: 'user', parts }],
-            generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2048, temperature: 0.8 },
+            generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 700, temperature: 0.8 },
         }),
         signal: AbortSignal.timeout(AI_TIMEOUT_MS),
     });
@@ -99,7 +124,7 @@ async function callAivene(env, frames, prompt) {
             model: env.AIVENE_MODEL || 'qwen3.8-flash',
             messages: [{ role: 'user', content }],
             temperature: 0.8,
-            max_tokens: 2048,
+            max_tokens: 700,
         }),
         signal: AbortSignal.timeout(AI_TIMEOUT_MS),
     });
@@ -114,23 +139,31 @@ async function callAivene(env, frames, prompt) {
 }
 
 /**
- * Router utama: coba Gemini dulu; saat 429/5xx/error/timeout dan fallback aktif -> AIVene.
- * Mengembalikan { result, provider } atau melempar Error jika keduanya gagal.
+ * Router utama: coba SEMUA model Gemini berurutan (mutu -> murah) agar hemat free tier;
+ * baru jatuh ke AIVene setelah seluruh Gemini gagal (mis. 429 kuota harian).
+ * Mengembalikan { result, provider } atau melempar Error jika semuanya gagal.
  */
-export async function analyzeVideo(env, { frames, productName, affiliateLink, duration, gender }) {
+export async function analyzeVideo(env, { frames, productName, affiliateLink, duration, gender, platform }) {
     const frameTimes = frames.map((_, i) => i);
-    const prompt = buildAnalysisPrompt({ productName, affiliateLink, duration, gender, frameTimes });
+    const prompt = buildAnalysisPrompt({ productName, affiliateLink, duration, gender, frameTimes, platform });
     const fallbackEnabled = String(env.GEMINI_FALLBACK_ENABLED ?? 'true') !== 'false';
-    let firstError = null;
+    const models = String(env.GEMINI_MODELS || env.GEMINI_MODEL || 'gemini-2.5-flash')
+        .split(',').map(s => s.trim()).filter(Boolean);
+    let lastError = null;
 
-    try {
-        if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY kosong');
-        const raw = await callGemini(env, frames, prompt);
-        const result = normalizeResult(raw, duration);
-        if (result) return { result, provider: 'gemini' };
-        firstError = new Error('Respons Gemini tidak dapat diparse jadi JSON valid');
-    } catch (e) {
-        firstError = e;
+    if (env.GEMINI_API_KEY) {
+        for (const model of models) {
+            try {
+                const raw = await callGemini(env, model, frames, prompt);
+                const result = normalizeResult(raw, duration);
+                if (result) return { result, provider: 'gemini:' + model };
+                lastError = new Error(`Respons ${model} tidak dapat diparse jadi JSON valid`);
+            } catch (e) {
+                lastError = e; // 429/5xx/timeout -> coba model Gemini berikutnya
+            }
+        }
+    } else {
+        lastError = new Error('GEMINI_API_KEY kosong');
     }
 
     if (fallbackEnabled && env.AIVENE_API_KEY) {
@@ -139,8 +172,8 @@ export async function analyzeVideo(env, { frames, productName, affiliateLink, du
             const result = normalizeResult(raw, duration);
             if (result) return { result, provider: 'aivene' };
         } catch (e) {
-            // dua-duanya gagal -> lempar error gabungan
+            lastError = e; // seluruh Gemini + AIVene gagal -> lempar
         }
     }
-    throw firstError || new Error('Analisa AI gagal');
+    throw lastError || new Error('Analisa AI gagal');
 }

@@ -3,6 +3,7 @@
 import { Hono } from 'hono';
 import authRoutes from './routes/auth.js';
 import analyzeRoutes from './routes/analyze.js';
+import ttsRoutes from './routes/tts.js';
 import paymentRoutes from './routes/payment.js';
 import webhookRoutes from './routes/webhook.js';
 import adminRoutes from './routes/admin.js';
@@ -22,6 +23,7 @@ app.route('/api/download', downloadRoutes);  // /api/download/files, /api/downlo
 
 // Endpoint butuh login
 app.route('/api', analyzeRoutes);   // /api/analyze
+app.route('/api', ttsRoutes);       // /api/tts/voices, /api/tts/preview (pratinjau suara, tanpa debit)
 app.route('/api', paymentRoutes);   // /api/payment/create-qris, /api/payment/status/:orderId
 app.route('/api', adminRoutes);     // /api/admin/* (superadmin)
 

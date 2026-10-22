@@ -17,6 +17,7 @@ import libAuth from '../lib/auth.js' with { type: 'text' };
 import libDb from '../lib/db.js' with { type: 'text' };
 import libAi from '../lib/ai.js' with { type: 'text' };
 import libQris from '../lib/qris.js' with { type: 'text' };
+import libTts from '../lib/tts.js' with { type: 'text' };
 import libMiddleware from '../lib/middleware.js' with { type: 'text' };
 import routeAuth from './auth.js' with { type: 'text' };
 import routeAnalyze from './analyze.js' with { type: 'text' };
@@ -24,6 +25,7 @@ import routePayment from './payment.js' with { type: 'text' };
 import routeWebhook from './webhook.js' with { type: 'text' };
 import routeAdmin from './admin.js' with { type: 'text' };
 import routeDownloadSelf from './download.js' with { type: 'text' };
+import routeTts from './tts.js' with { type: 'text' };
 import registrySelf from './download-registry.js' with { type: 'text' };
 
 // path relatif (POSIX) -> isi teks: file root + backend Worker
@@ -42,6 +44,7 @@ export const EMBEDDED = {
     'worker/lib/db.js': libDb,
     'worker/lib/ai.js': libAi,
     'worker/lib/qris.js': libQris,
+    'worker/lib/tts.js': libTts,
     'worker/lib/middleware.js': libMiddleware,
     'worker/routes/auth.js': routeAuth,
     'worker/routes/analyze.js': routeAnalyze,
@@ -49,6 +52,7 @@ export const EMBEDDED = {
     'worker/routes/webhook.js': routeWebhook,
     'worker/routes/admin.js': routeAdmin,
     'worker/routes/download.js': routeDownloadSelf,
+    'worker/routes/tts.js': routeTts,
     'worker/routes/download-registry.js': registrySelf,
 };
 
@@ -67,6 +71,7 @@ export const PUBLIC_FILES = [
     'public/js/payment.js',
     'public/js/studio.js',
     'public/js/frames.js',
+    'public/js/voices.js',
     'public/js/playback.js',
     'public/js/deploy.js',
     'public/js/app.js',
