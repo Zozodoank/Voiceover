@@ -13,3 +13,10 @@ let generatedScenesData = [];
 let generatedCaptionText = "";
 let generatedHashtagsText = "";
 let generatedProductResearch = "";
+
+// Sumber video dari URL lintas-origin (bisa menodai canvas -> ekspor WebM diblokir). Default: file lokal.
+let videoSourceIsRemote = false;
+// Audio Gemini TTS yang sudah di-prerender per adegan: [{ buffer, duration, blobUrl } | null].
+let sceneAudios = [];
+let sceneAudiosKey = ""; // signature voice+scenes yang menghasilkan sceneAudios (hindari prerender ulang)
+let isPlayingMerged = false; // status pemutaran gabungan aktif

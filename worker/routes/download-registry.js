@@ -72,6 +72,8 @@ export const PUBLIC_FILES = [
     'public/js/studio.js',
     'public/js/frames.js',
     'public/js/voices.js',
+    'public/js/video.js',
+    'public/js/audio-engine.js',
     'public/js/playback.js',
     'public/js/deploy.js',
     'public/js/app.js',

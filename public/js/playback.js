@@ -1,66 +1,59 @@
-// public/js/playback.js - Putar gabungan video+VO, ekspor, dan utilitas salin/unduh
-let isPlayingMerged = false;
+// public/js/playback.js - Kontrol pemutaran gabungan & utilitas salin/unduh subtitle.
+// Pemutaran & perekaman audio-VO sebenarnya ditangani audio-engine.js (startMergedPlayback/exportMergedVideoWebM).
 
 function togglePlayMergedVideo() {
     const btnText = document.getElementById('playMergedText');
     const icon = document.getElementById('playMergedIcon');
-    isPlayingMerged = !isPlayingMerged;
 
     if (isPlayingMerged) {
-        btnText.innerText = "Jeda";
-        icon.className = "fa-solid fa-pause";
-        document.getElementById('subtitleOverlayContainer').classList.remove('hidden');
-        document.getElementById('sceneOverlayBadge').classList.remove('hidden');
-        simulateSubtitlePlayback(0);
-        showToast('Memutar video beserta voice over emosi & subtitle...', 'info');
-    } else {
-        btnText.innerText = "Putar";
-        icon.className = "fa-solid fa-play";
-        document.getElementById('subtitleOverlayContainer').classList.add('hidden');
-        document.getElementById('sceneOverlayBadge').classList.add('hidden');
-    }
-}
-
-function simulateSubtitlePlayback(sceneIdx) {
-    if (!isPlayingMerged || sceneIdx >= generatedScenesData.length) {
-        if (sceneIdx >= generatedScenesData.length) {
-            isPlayingMerged = false;
-            document.getElementById('playMergedText').innerText = "Putar";
-            document.getElementById('playMergedIcon').className = "fa-solid fa-play";
-            document.getElementById('subtitleOverlayContainer').classList.add('hidden');
-            document.getElementById('sceneOverlayBadge').classList.add('hidden');
-        }
+        // Jeda/hentikan
+        if (typeof stopEverything === 'function') stopEverything();
+        if (typeof resetPlayBtn === 'function') resetPlayBtn();
         return;
     }
-
-    const scene = generatedScenesData[sceneIdx];
-    document.getElementById('subtitleOverlayText').innerText = scene.text;
-    document.getElementById('currentSceneBadgeText').innerText = `Adegan ${sceneIdx + 1}: ${scene.emotion}`;
-    drawDemoCanvasScene(sceneIdx);
-
-    const synth = window.speechSynthesis;
-    if (synth) {
-        const utter = new SpeechSynthesisUtterance(scene.text);
-        utter.lang = 'id-ID';
-        synth.speak(utter);
+    if (!generatedScenesData || !generatedScenesData.length) {
+        showToast('Belum ada naskah untuk diputar.', 'error');
+        return;
     }
-
-    setTimeout(() => {
-        if (isPlayingMerged) simulateSubtitlePlayback(sceneIdx + 1);
-    }, 4500);
+    isPlayingMerged = true;
+    btnText.innerText = 'Jeda';
+    icon.className = 'fa-solid fa-pause';
+    showToast('Memutar video beserta voice over emosi & subtitle (tersinkron)...', 'info');
+    startMergedPlayback().catch((e) => {
+        showToast('Putar gagal: ' + (e.message || e), 'error');
+        resetPlayBtn();
+    });
 }
 
-function exportMergedVideoWebM() {
-    showToast('Memulai rendering file video gabungan dengan pola emosi (.webm)...', 'info');
-    setTimeout(() => {
-        const blob = new Blob(["Mock Rendered Video with VO Emotion and Subtitle"], { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `VO_Emotion_${Date.now()}.webm`;
-        a.click();
-        showToast('Video gabungan emosi berhasil diunduh!', 'success');
-    }, 1500);
+/** Bangun konten SRT nyata dari generatedScenesData (timestamp sesuai adegan). */
+function buildSrtContent(scenes) {
+    const fmt = (sec) => {
+        const ms = Math.round((sec - Math.floor(sec)) * 1000);
+        const total = Math.floor(sec);
+        const h = String(Math.floor(total / 3600)).padStart(2, '0');
+        const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+        const s = String(total % 60).padStart(2, '0');
+        return `${h}:${m}:${s},${String(ms).padStart(3, '0')}`;
+    };
+    return (scenes || []).map((sc, i) =>
+        `${i + 1}\n${fmt(Number(sc.start) || 0)} --> ${fmt(Number(sc.end) || 0)}\n${sc.text || ''}\n`
+    ).join('\n');
+}
+
+function downloadSrtFile() {
+    if (!generatedScenesData || !generatedScenesData.length) {
+        showToast('Belum ada naskah untuk diekspor sebagai .SRT.', 'error');
+        return;
+    }
+    const srtContent = buildSrtContent(generatedScenesData);
+    const blob = new Blob([srtContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Subtitle_${Date.now()}.srt`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    showToast('File subtitle .SRT (sesuai adegan) berhasil diunduh!', 'success');
 }
 
 function copyCaptionAndHashtags() {
@@ -83,15 +76,4 @@ function copyAffiliateBox() {
     document.execCommand('copy');
     document.body.removeChild(ta);
     showToast('Link affiliate berhasil disalin!', 'success');
-}
-
-function downloadSrtFile() {
-    let srtContent = "1\n00:00:00,000 --> 00:00:05,000\nKulit kusam dan kering? Ini solusinya!\n\n2\n00:00:05,000 --> 00:00:10,000\nMengandung 5X Ceramide untuk skin barrier.\n\n3\n00:00:10,000 --> 00:00:15,000\nCek keranjang kuning sekarang juga!";
-    const blob = new Blob([srtContent], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Subtitle_Emosi_${Date.now()}.srt`;
-    a.click();
-    showToast('File subtitle .SRT berpolanya emosi berhasil diunduh!', 'success');
 }

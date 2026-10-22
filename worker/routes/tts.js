@@ -23,9 +23,10 @@ router.post('/tts/preview', requireAuth, async (c) => {
     }
     let text = String(body.text || DEFAULT_SAMPLE).trim().slice(0, MAX_TEXT);
     if (!text) text = DEFAULT_SAMPLE;
+    const emotion = String(body.emotion || '').trim().slice(0, 40);
 
     try {
-        const { wav } = await synthesizePreview(c.env, voiceName, text);
+        const { wav } = await synthesizePreview(c.env, voiceName, text, emotion);
         return new Response(wav, {
             headers: {
                 'Content-Type': 'audio/wav',

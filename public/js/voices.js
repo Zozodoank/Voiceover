@@ -65,15 +65,16 @@ function getSelectedVoice() {
  * @param {string} name  nama voice
  * @param {HTMLElement|null} btn  tombol pemicu (untuk state loading), boleh null
  * @param {string} [text]  teks opsional (default cuplikan); utk "Dengar" adegan
+ * @param {string} [emotion]  label emosi adegan (opsional) untuk mengarahkan gaya bicara
  */
-async function previewVoice(name, btn, text) {
+async function previewVoice(name, btn, text, emotion) {
     if (btn) btn.disabled = true;
     try {
         const res = await fetch('/api/tts/preview', {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ voiceName: name, text: text || undefined }),
+            body: JSON.stringify({ voiceName: name, text: text || undefined, emotion: emotion || undefined }),
         });
         const ct = res.headers.get('Content-Type') || '';
         if (!res.ok || ct.indexOf('audio') === -1) {

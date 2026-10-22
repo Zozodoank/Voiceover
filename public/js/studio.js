@@ -3,6 +3,9 @@
 
 document.getElementById('loadDemoBtn').addEventListener('click', () => {
     isUsingDemoVideo = true;
+    uploadedVideoFile = null;      // mode demo: jangan pakai file yang pernah diupload
+    videoSourceIsRemote = false;
+    sceneAudios = []; sceneAudiosKey = '';
     document.getElementById('uploadPrompt').classList.add('hidden');
     document.getElementById('uploadSuccess').classList.remove('hidden');
     document.getElementById('fileNameDisplay').innerText = "demo_produk_kecantikan.mp4";
@@ -170,6 +173,15 @@ async function initiateCommercialGeneration() {
     setProgress(100, `<i class="fa-solid fa-circle-check text-emerald-400"></i> Voice Over Berpola Emosi & Subtitle Selesai!`);
     showToast('Voice Over berpola emosi berhasil dibuat dan disimpan ke Riwayat!', 'success');
     setTimeout(() => statusBox.classList.add('hidden'), 3000);
+
+    // Prerender audio Gemini TTS untuk semua adegan di latar belakang (agar Putar/Unduh WebM langsung sinkron).
+    sceneAudios = []; sceneAudiosKey = '';
+    if (typeof ensureSceneAudios === 'function') {
+        showToast('Menyiapkan audio tiap adegan (prerender)…', 'info');
+        ensureSceneAudios().then((r) => {
+            const res = r || (window.__lastPrerender || {});
+        }).catch(() => { /* fallback speechSynthesis saat putar */ });
+    }
 }
 
 function renderScenesTimeline(scenes) {
@@ -194,7 +206,7 @@ function renderScenesTimeline(scenes) {
 }
 
 function playSceneAudio(text, emotion) {
-    // Dengar naskah adegan dengan voice Gemini TTS yang sedang dipilih (pratinjau gratis, tanpa debit)
+    // Dengar naskah adegan dengan voice Gemini TTS terpilih + nuansa emosi (pratinjau gratis, tanpa debit)
     const v = getSelectedVoice();
-    previewVoice(v.name, null, text);
+    previewVoice(v.name, null, text, emotion);
 }

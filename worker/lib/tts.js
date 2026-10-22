@@ -40,6 +40,27 @@ export const GEMINI_TTS_VOICES = [
 const VOICE_MAP = new Map(GEMINI_TTS_VOICES.map(v => [v.name, v]));
 const TTS_TIMEOUT_MS = 20000;
 
+// Peta label emosi adegan -> frasa gaya natural-language (best-effort untuk Gemini 2.5 TTS).
+// Label tak dikenal dan bukan "Netral" akan dipakai apa adanya sebagai frasa gaya.
+const EMOTION_STYLE = {
+    'Penasaran': 'penasaran dan penuh tanya',
+    'Prihatin': 'peduli dan sedikit murung',
+    'Heran': 'terkejut dan takjub',
+    'Hopeful': 'penuh harap dan optimis',
+    'Yakin': 'yakin dan meyakinkan',
+    'Antusias': 'bersemangat dan berenergi',
+    'Mendesak': 'tegas dan mendesak',
+    'Ramah': 'ramah dan hangat',
+    'Serius': 'serius dan berwibawa',
+};
+
+/** Frasa gaya untuk emosi tertentu ("" bila netral/tak perlu penyesuaian). */
+export function styleForEmotion(emotion) {
+    const e = String(emotion || '').trim();
+    if (!e || e.toLowerCase() === 'netral') return '';
+    return EMOTION_STYLE[e] || e.toLowerCase();
+}
+
 /** True jika nama voice ada di daftar prebuilt. */
 export function isKnownVoice(name) {
     return VOICE_MAP.has(name);
@@ -81,40 +102,60 @@ function pcmToWav(pcmBytes, sampleRate) {
     return out;
 }
 
-/** Panggil Gemini TTS; kembalikan { mimeType, data(base64 PCM) }. */
-async function callGeminiTts(env, voiceName, text) {
+/** Panggil Gemini TTS; kembalikan { mimeType, data(base64 PCM) }. styleDirective opsional (nuansa emosi). */
+async function callGeminiTts(env, voiceName, text, styleDirective) {
     const model = env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`;
-    const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+    const buildBody = (withStyle) => {
+        const b = {
             contents: [{ parts: [{ text }] }],
             generationConfig: {
                 responseModalities: ['AUDIO'],
                 speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
             },
-        }),
-        signal: AbortSignal.timeout(TTS_TIMEOUT_MS),
-    });
-    if (!res.ok) {
-        const err = new Error(`Gemini TTS HTTP ${res.status}`);
-        err.status = res.status;
-        throw err;
+        };
+        // Arahan gaya di systemInstruction (bukan bagian teks yang dibacakan) agar emosi memengaruhi prosodi.
+        if (withStyle && styleDirective) {
+            b.systemInstruction = { parts: [{ text: `Bacakan sebagai voice-over iklan berbahasa Indonesia dengan nuansa emosi: ${styleDirective}. Jangan bacakan instruksi ini, hanya sesuaikan nada bicara.` }] };
+        }
+        return b;
+    };
+    const doReq = async (withStyle) => {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(buildBody(withStyle)),
+            signal: AbortSignal.timeout(TTS_TIMEOUT_MS),
+        });
+        if (!res.ok) {
+            const err = new Error(`Gemini TTS HTTP ${res.status}`);
+            err.status = res.status;
+            throw err;
+        }
+        const data = await res.json();
+        const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+        const inline = parts.map(p => p.inlineData).filter(Boolean)[0];
+        if (!inline || !inline.data) throw new Error('Gemini TTS tidak mengembalikan audio');
+        return inline;
+    };
+    // Graceful degradation: coba dengan gaya; bila gagal (HTTP error ATAUP kandidat tanpa audio),
+    // ulangi tanpa gaya agar pratinjau tidak pernah lebih buruk dari perilaku tanpa-emosi.
+    if (styleDirective) {
+        try {
+            return await doReq(true);
+        } catch (e) {
+            return await doReq(false);
+        }
     }
-    const data = await res.json();
-    const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
-    const inline = parts.map(p => p.inlineData).filter(Boolean)[0];
-    if (!inline || !inline.data) throw new Error('Gemini TTS tidak mengembalikan audio');
-    return inline;
+    return await doReq(false);
 }
 
 /**
  * Sintesis cuplikan preview -> Uint8Array berisi WAV siap diputar.
  * Melempar Error bila Gemini TTS gagal (rute membalas 502).
  */
-export async function synthesizePreview(env, voiceName, text) {
-    const inline = await callGeminiTts(env, voiceName, text);
+export async function synthesizePreview(env, voiceName, text, emotion) {
+    const inline = await callGeminiTts(env, voiceName, text, styleForEmotion(emotion));
     const m = /rate=(\d+)/.exec(inline.mimeType || '');
     const sampleRate = m ? Number(m[1]) : 24000;
     const pcm = base64ToBytes(inline.data);
