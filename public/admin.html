@@ -54,6 +54,25 @@
             <p id="adjustResult" class="text-[11px] text-slate-500"></p>
         </section>
 
+        <!-- Gambar QRIS (KV) -->
+        <section class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+            <h2 class="text-sm font-bold"><i class="fa-solid fa-qrcode text-rose-400 mr-1"></i> Gambar QRIS (Halaman Billing)</h2>
+            <p class="text-[11px] text-slate-400">Unggah gambar QRIS pembayaran. Disimpan di KV Cloudflare (hemat) dan tampil ke semua user di modal billing. Bila kosong, memakai bawaan <code>QRS.jpg</code>.</p>
+            <div class="flex items-center gap-4">
+                <div class="w-28 h-28 rounded-lg border border-slate-700 bg-white p-1 flex items-center justify-center shrink-0 overflow-hidden">
+                    <img id="qrisPreview" src="/api/qris/image" alt="QRIS" class="max-w-full max-h-full object-contain">
+                </div>
+                <div class="flex-1 space-y-2">
+                    <input id="qrisFileInput" type="file" accept="image/png,image/jpeg,image/webp" class="block w-full text-xs text-slate-400 file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-brand-600 file:text-white file:text-xs file:font-bold file:cursor-pointer">
+                    <div class="flex flex-wrap gap-2">
+                        <button id="qrisSaveBtn" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold transition disabled:opacity-40 disabled:cursor-not-allowed" disabled><i class="fa-solid fa-floppy-disk mr-1"></i>Simpan ke KV</button>
+                        <button id="qrisResetBtn" class="px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-xs font-bold transition"><i class="fa-solid fa-rotate-left mr-1"></i>Reset ke Bawaan</button>
+                    </div>
+                    <p id="qrisImgResult" class="text-[11px] text-slate-500"></p>
+                </div>
+            </div>
+        </section>
+
         <!-- Daftar user -->
         <section class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
             <h2 class="text-sm font-bold"><i class="fa-solid fa-users text-brand-400 mr-1"></i> Daftar User</h2>
@@ -100,6 +119,7 @@
                 return;
             }
             document.getElementById('adminEmailLabel').textContent = me.email;
+            loadQrisStatus();
 
             const [stats, users] = await Promise.all([
                 fetch('/api/admin/stats', { credentials: 'same-origin' }).then(r => r.json()),
@@ -142,6 +162,71 @@
         });
 
         window.addEventListener('load', loadDashboard);
+
+        // ===== Gambar QRIS (KV) =====
+        let qrisPendingDataUrl = null;
+        const qrisFile = document.getElementById('qrisFileInput');
+        const qrisSave = document.getElementById('qrisSaveBtn');
+        const qrisReset = document.getElementById('qrisResetBtn');
+        const qrisOut = document.getElementById('qrisImgResult');
+        const qrisPreview = document.getElementById('qrisPreview');
+        const kb = (n) => (n / 1024).toFixed(0) + ' KB';
+
+        async function loadQrisStatus() {
+            try {
+                const st = await fetch('/api/admin/qris-image', { credentials: 'same-origin' }).then(r => r.json());
+                qrisOut.textContent = st.configured
+                    ? `Aktif dari KV (${kb(st.bytes)}, ${st.contentType}).`
+                    : 'Belum ada di KV - memakai bawaan QRS.jpg.';
+            } catch (e) { /* non-superadmin / jaringan */ }
+        }
+
+        qrisFile.addEventListener('change', () => {
+            const f = qrisFile.files && qrisFile.files[0];
+            qrisPendingDataUrl = null; qrisSave.disabled = true;
+            if (!f) return;
+            if (!/^image\/(png|jpe?g|webp)$/i.test(f.type)) { qrisOut.textContent = 'Tipe harus PNG/JPG/WebP.'; return; }
+            if (f.size > 2 * 1024 * 1024) { qrisOut.textContent = 'Maks 2 MB.'; return; }
+            const reader = new FileReader();
+            reader.onload = () => {
+                qrisPendingDataUrl = reader.result;
+                qrisPreview.src = qrisPendingDataUrl; // pratinjau lokal sebelum simpan
+                qrisSave.disabled = false;
+                qrisOut.textContent = `Siap diunggah (${kb(f.size)}). Klik "Simpan ke KV".`;
+            };
+            reader.readAsDataURL(f);
+        });
+
+        qrisSave.addEventListener('click', async () => {
+            if (!qrisPendingDataUrl) return;
+            qrisSave.disabled = true; qrisOut.textContent = 'Menyimpan ke KV...';
+            try {
+                const r = await fetch('/api/admin/qris-image', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+                    body: JSON.stringify({ dataUrl: qrisPendingDataUrl })
+                });
+                const d = await r.json();
+                if (r.ok) {
+                    qrisOut.textContent = `Tersimpan ke KV (${kb(d.bytes)}).`;
+                    qrisPreview.src = '/api/qris/image?t=' + d.ver;
+                    qrisPendingDataUrl = null; qrisFile.value = '';
+                } else {
+                    qrisOut.textContent = 'Gagal: ' + (d.error || r.status);
+                    qrisSave.disabled = !!qrisPendingDataUrl;
+                }
+            } catch (e) { qrisOut.textContent = 'Gagal menghubungi server.'; qrisSave.disabled = !!qrisPendingDataUrl; }
+        });
+
+        qrisReset.addEventListener('click', async () => {
+            if (!confirm('Hapus gambar QRIS dari KV dan kembali ke bawaan (QRS.jpg)?')) return;
+            qrisOut.textContent = 'Menghapus...';
+            try {
+                const r = await fetch('/api/admin/qris-image', { method: 'DELETE', credentials: 'same-origin' });
+                const d = await r.json();
+                qrisOut.textContent = r.ok ? 'Dihapus - kini memakai bawaan QRS.jpg.' : 'Gagal: ' + (d.error || r.status);
+                qrisPreview.src = '/api/qris/image?t=' + Date.now();
+            } catch (e) { qrisOut.textContent = 'Gagal menghubungi server.'; }
+        });
     </script>
 </body>
 </html>

@@ -24,6 +24,7 @@ import routeAnalyze from './analyze.js' with { type: 'text' };
 import routePayment from './payment.js' with { type: 'text' };
 import routeWebhook from './webhook.js' with { type: 'text' };
 import routeAdmin from './admin.js' with { type: 'text' };
+import routeQrisImage from './qris-image.js' with { type: 'text' };
 import routeDownloadSelf from './download.js' with { type: 'text' };
 import routeTts from './tts.js' with { type: 'text' };
 import registrySelf from './download-registry.js' with { type: 'text' };
@@ -51,6 +52,7 @@ export const EMBEDDED = {
     'worker/routes/payment.js': routePayment,
     'worker/routes/webhook.js': routeWebhook,
     'worker/routes/admin.js': routeAdmin,
+    'worker/routes/qris-image.js': routeQrisImage,
     'worker/routes/download.js': routeDownloadSelf,
     'worker/routes/tts.js': routeTts,
     'worker/routes/download-registry.js': registrySelf,
