@@ -179,7 +179,8 @@ function renderScenesTimeline(scenes) {
 }
 
 function playSceneAudio(text, emotion) {
-    // Dengar naskah adegan dengan voice Gemini TTS terpilih + nuansa emosi (pratinjau gratis, tanpa debit)
+    // Dengar naskah adegan dengan voice TTS terpilih + nuansa emosi (model mengikuti tier kualitas)
     const v = getSelectedVoice();
-    previewVoice(v.name, null, text, emotion);
+    const tier = (typeof getSelectedTier === 'function') ? getSelectedTier() : '';
+    previewVoice(v.name, null, text, emotion, tier);
 }

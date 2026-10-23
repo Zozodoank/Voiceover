@@ -1,6 +1,8 @@
 // worker/lib/ai.js - Analisa frame video: Gemini (utama, free tier) dengan fallback AIVene qwen3.8-flash.
 // Bentuk hasil final identik dengan kontrak UI lama: { research, scenes:[{start,end,emotion,text}], caption, hashtags }
 
+import { ALLOWED_EMOTIONS } from './tts.js';
+
 const AI_TIMEOUT_MS = 20000;
 
 /** Aturan CTA per platform tujuan - menentukan frasa keranjang yang boleh/tidak boleh. */
@@ -36,7 +38,7 @@ export function buildAnalysisPrompt({ productName, affiliateLink, duration, gend
         `Analisa visual (termasuk teks yang tampil di layar) lalu hasilkan naskah Voice Over untuk suara ${voice}.`,
         `TIGA TUGAS UTAMA:`,
         `1) TIMESTAMP: pecah durasi ${dur} detik menjadi 3-6 adegan BERURUTAN mengikuti perubahan adegan pada frame. Adegan pertama start=0; start tiap adegan = end adegan sebelumnya; adegan TERAKHIR wajib end=${dur}.`,
-        `2) EMOSI NATURAL: isi "emotion" tiap adegan HARUS wajar mengikuti isi visual adegan itu (mis. Penasaran, Prihatin, Heran, Hopeful, Yakin, Antusias, Mendesak), mengalir seperti narator sungguhan - BUKAN pola kaku yang diulang.`,
+        `2) EMOSI PER ADEGAN (natural & terkurasi): nilai "emotion" tiap adegan WAJIB hanya dari: Penasaran, Prihatin, Terinspirasi, Yakin, Antusias, Terbukti, Mendesak, Ramah. Emosi HARUS menyesuaikan isi visual adegan itu secara natural (BUKAN urutan template kaku), dan DILARANG memakai label yang sama pada dua adegan berurutan. Susun busur affiliate longgar: buka dengan kait yang memancing (Penasaran/Prihatin), lanjut solusi & keyakinan (Yakin/Terinspirasi), bukti & kesaksian (Antusias/Terbukti), tutup ajakan (Mendesak/Ramah). Seluruh kalimat VO tetap berenergi positif dan meyakinkan.`,
         `3) CTA: ${cta.rule} Adegan TERAKHIR wajib memuat kalimat CTA ini, dan "caption" juga memuat CTA yang sama.`,
         `Balik HANYA JSON valid dengan skema:`,
         `{"research":"ringkasan riset produk 1-2 kalimat berbahasa Indonesia",`,
@@ -62,6 +64,27 @@ function extractJson(text) {
     return null;
 }
 
+/** Petakan label emosi bebas ke kosakata terkurasi (case-insensitive + sinonim dekat). */
+export function normalizeEmotion(raw) {
+    const e = String(raw || '').trim();
+    if (!e) return 'Antusias';
+    const exact = ALLOWED_EMOTIONS.find(a => a.toLowerCase() === e.toLowerCase());
+    if (exact) return exact;
+    const s = e.toLowerCase();
+    const table = [
+        [['penasar', 'tanya', 'ingintahu'], 'Penasaran'],
+        [['prihatin', 'sedih', 'murung', 'peduli', 'khawatir'], 'Prihatin'],
+        [['inspirasi', 'semangat', 'termotivasi', 'bangga'], 'Terinspirasi'],
+        [['yakin', 'meyakin', 'percaya', 'keyakin', 'optimis', 'hopeful'], 'Yakin'],
+        [['antusias', 'senang', 'gembira', 'energi', 'seru', 'takjub', 'heran'], 'Antusias'],
+        [['bukti', 'terbukti', 'kesaksian', 'nyata', 'hasil'], 'Terbukti'],
+        [['desak', 'urgensi', 'segera', 'terbatas', 'tegas'], 'Mendesak'],
+        [['ramah', 'hangat', 'akrab', 'santai'], 'Ramah'],
+    ];
+    for (const [keys, out] of table) { if (keys.some(k => s.includes(k))) return out; }
+    return 'Antusias';
+}
+
 /** Validasi bentuk hasil; kembalikan objek ternormalisasi atau null. */
 export function normalizeResult(raw, duration) {
     if (!raw || !Array.isArray(raw.scenes) || raw.scenes.length < 2 || raw.scenes.length > 6) return null;
@@ -69,7 +92,7 @@ export function normalizeResult(raw, duration) {
     const scenes = raw.scenes.map((s, i) => ({
         start: Math.max(0, Math.round(Number(s.start) >= 0 ? Number(s.start) : Math.floor((i * dur) / raw.scenes.length))),
         end: Math.max(1, Math.round(Number(s.end) > 0 ? Number(s.end) : Math.floor(((i + 1) * dur) / raw.scenes.length))),
-        emotion: String(s.emotion || 'Netral'),
+        emotion: normalizeEmotion(s.emotion),
         text: String(s.text || '').trim(),
     })).filter(s => s.text);
     if (scenes.length < 2) return null;

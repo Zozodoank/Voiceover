@@ -9,7 +9,13 @@ let _activeSources = [];     // AudioBufferSourceNode aktif agar bisa dihentikan
 let _rafId = 0;
 let _prerenderInflight = null; // promise prerender aktif (hindari panggilan ganda)
 
-const EXPORT_W = 720, EXPORT_H = 405, EXPORT_FPS = 30;
+const EXPORT_W = 1080, EXPORT_H = 1920, EXPORT_FPS = 30;
+
+/** Tier kualitas terpilih (memilih model penalaran Gemini TTS; voice & energi tetap sama). */
+function getSelectedTier() {
+    const r = document.querySelector('input[name="ttsModel"]:checked');
+    return r ? r.value : '';
+}
 
 function audioCtx() {
     if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -20,7 +26,7 @@ function audioCtx() {
 /** Signature voice + isi naskah (deteksi perlu prerender ulang tidak). */
 function sceneAudioSignature() {
     const v = (typeof getSelectedVoice === 'function') ? getSelectedVoice().name : '';
-    return v + '||' + (generatedScenesData || []).map(s => (s.emotion || '') + '#' + (s.text || '')).join('||');
+    return v + '||' + getSelectedTier() + '||' + (generatedScenesData || []).map(s => (s.emotion || '') + '#' + (s.text || '')).join('||');
 }
 
 /** Estimasi durasi (detik) bila audio adegan gagal dibuat. */
@@ -31,11 +37,11 @@ function fallbackDuration(scene) {
 }
 
 /** Ambil satu cuplikan TTS sebagai AudioBuffer (plus blobUrl). Melempar error bila gagal. */
-async function fetchPreviewBuffer(voiceName, text, emotion) {
+async function fetchPreviewBuffer(voiceName, text, emotion, tier) {
     const res = await fetch('/api/tts/preview', {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ voiceName, text, emotion: emotion || undefined }),
+        body: JSON.stringify({ voiceName, text, emotion: emotion || undefined, tier: tier || undefined }),
     });
     const ct = res.headers.get('Content-Type') || '';
     if (!res.ok || ct.indexOf('audio') === -1) throw new Error('tts_' + res.status);
@@ -47,7 +53,8 @@ async function fetchPreviewBuffer(voiceName, text, emotion) {
 /** Buat audio untuk SEMUA adegan (paralel terbatas 3). Slot gagal -> null (dipakai saat putar/ekspor). */
 async function prerenderSceneAudios() {
     const scenes = generatedScenesData || [];
-    const vName = (typeof getSelectedVoice === 'function') ? getSelectedVoice().name : 'alloy';
+    const vName = (typeof getSelectedVoice === 'function') ? getSelectedVoice().name : 'Kore';
+    const tier = getSelectedTier();
     const sig = sceneAudioSignature();
     sceneAudios = new Array(scenes.length).fill(null);
     sceneAudiosKey = ''; // tandai belum siap sampai selesai
@@ -60,7 +67,7 @@ async function prerenderSceneAudios() {
         while (queue.length) {
             const { s, i } = queue.shift();
             try {
-                sceneAudios[i] = await fetchPreviewBuffer(vName, s.text, s.emotion);
+                sceneAudios[i] = await fetchPreviewBuffer(vName, s.text, s.emotion, tier);
             } catch (e) {
                 sceneAudios[i] = null; fail++;
             }
@@ -186,17 +193,24 @@ function resetPlayBtn() {
 /** ==== Ekspor WebM nyata: kanvas kompositor + audio mix + burn subtitle ==== */
 async function exportMergedVideoWebM() {
     const btn = document.getElementById('exportMergedBtn');
+    const label = document.getElementById('exportBtnLabel');
     if (btn && btn.disabled) return; // cegah klik ganda
+    if (!generatedScenesData || !generatedScenesData.length) { showToast('Buat Voice Over dulu sebelum mengunduh.', 'error'); return; }
     if (!window.MediaRecorder) { showToast('Browser tidak mendukung MediaRecorder. Pakai unduh .SRT.', 'error'); return; }
     if (!navigator.mediaDevices || !HTMLCanvasElement.prototype.captureStream) {
         showToast('Ekspor video tidak didukung di browser ini. Pakai unduh .SRT.', 'error'); return;
     }
 
-    if (btn) btn.disabled = true;
+    const setBusy = (busy) => { if (btn) btn.disabled = busy; if (label) label.innerText = busy ? 'Merekam…' : 'Unduh'; };
+
+    setBusy(true);
     stopEverything();
     try {
+        showToast('Menyiapkan audio tiap adegan…', 'info');
         await ensureSceneAudios();
         if (!generatedScenesData || !generatedScenesData.length) throw new Error('Belum ada naskah.');
+        const validAudios = (sceneAudios || []).filter(a => a && a.buffer).length;
+        if (validAudios === 0) showToast('Perhatian: audio VO tidak tersedia (provider gagal) — video direkam tanpa suara.', 'error');
 
         const mimeType = pickWebmMime();
         if (!mimeType) throw new Error('Format WebM tidak didukung browser.');
@@ -263,14 +277,16 @@ async function exportMergedVideoWebM() {
             return;
         }
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = `VO_${name}_${Date.now()}.webm`; a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        const a = document.createElement('a');
+        a.href = url; a.download = `VO_${name}_${Date.now()}.webm`; a.style.display = 'none';
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { try { document.body.removeChild(a); } catch (e) { /* ignore */ } URL.revokeObjectURL(url); }, 4000);
         showToast('Video WebM (VO + subtitle) berhasil diunduh!', 'success');
     } catch (e) {
         showToast('Ekspor gagal: ' + (e.message || e) + '. Coba unduh .SRT.', 'error');
     } finally {
         resetPlayBtn();
-        if (btn) btn.disabled = false;
+        setBusy(false);
     }
 }
 
@@ -287,31 +303,31 @@ function drawFrame(cctx, comp, idx) {
     // dasar hitam
     cctx.fillStyle = '#000'; cctx.fillRect(0, 0, comp.width, comp.height);
     if (vis.type === 'video' && vis.el && vis.el.readyState >= 2) {
-        drawContain(cctx, vis.el, comp.width, comp.height);
+        drawCover(cctx, vis.el, comp.width, comp.height);
     }
-    // badge adegan (kiri atas)
+    // badge adegan (kiri atas) - skala portrait 1080x1920
     cctx.fillStyle = 'rgba(0,0,0,0.55)';
-    roundRect(cctx, 12, 12, 240, 30, 15); cctx.fill();
-    cctx.fillStyle = '#fff'; cctx.font = 'bold 15px Inter, sans-serif'; cctx.textAlign = 'left'; cctx.textBaseline = 'middle';
-    cctx.fillText(`Adegan ${idx + 1}: ${scene.emotion || ''}`, 24, 27);
+    roundRect(cctx, 24, 24, 520, 64, 32); cctx.fill();
+    cctx.fillStyle = '#fff'; cctx.font = 'bold 32px Inter, sans-serif'; cctx.textAlign = 'left'; cctx.textBaseline = 'middle';
+    cctx.fillText(`Adegan ${idx + 1}: ${scene.emotion || ''}`, 40, 56);
     // subtitle burn-in (bawah, tengah)
     const text = scene.text || '';
     if (text) {
-        cctx.font = '800 26px Inter, sans-serif'; cctx.textAlign = 'center'; cctx.textBaseline = 'alphabetic';
-        const lines = wrapText(cctx, text, comp.width - 60);
-        let y = comp.height - 40 - (lines.length - 1) * 34;
+        cctx.font = '800 60px Inter, sans-serif'; cctx.textAlign = 'center'; cctx.textBaseline = 'alphabetic';
+        const lines = wrapText(cctx, text, comp.width - 120);
+        let y = comp.height - 120 - (lines.length - 1) * 74;
         for (const ln of lines) {
-            cctx.lineWidth = 5; cctx.strokeStyle = 'rgba(0,0,0,0.85)'; cctx.strokeText(ln, comp.width / 2, y);
+            cctx.lineWidth = 8; cctx.strokeStyle = 'rgba(0,0,0,0.85)'; cctx.strokeText(ln, comp.width / 2, y);
             cctx.fillStyle = '#fde047'; cctx.fillText(ln, comp.width / 2, y);
-            y += 34;
+            y += 74;
         }
     }
 }
 
-/** Gambar sumber video menjaga rasio aspek di dalam w×h, ter-center. */
-function drawContain(cctx, el, w, h) {
+/** Gambar sumber video mengisi penuh w×h (crop sisi berlebih), ter-center. */
+function drawCover(cctx, el, w, h) {
     const sw = el.videoWidth || el.width || w, sh = el.videoHeight || el.height || h;
-    const scale = Math.min(w / sw, h / sh);
+    const scale = Math.max(w / sw, h / sh);
     const dw = sw * scale, dh = sh * scale;
     cctx.drawImage(el, (w - dw) / 2, (h - dh) / 2, dw, dh);
 }
@@ -330,7 +346,7 @@ function wrapText(cctx, text, maxW) {
         else line = test;
     }
     if (line) lines.push(line);
-    return lines.slice(0, 3); // maks 3 baris
+    return lines.slice(0, 4); // maks 4 baris (kanvas portrait)
 }
 
 function sanitizeFile(s) {

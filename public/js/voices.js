@@ -1,7 +1,7 @@
-// public/js/voices.js - Pemilih voice TTS (AIVene) + pratinjau suara asli (via /api/tts/*).
+// public/js/voices.js - Pemilih voice TTS (Gemini, fallback AIVene) + pratinjau suara asli (via /api/tts/*).
 // Classic script (bukan ES module): memakai global showToast (ui.js) & apiFetch (api.js).
 
-let GEMINI_VOICES_CACHE = [];   // diisi dari GET /api/tts/voices (kini voice AIVene)
+let GEMINI_VOICES_CACHE = [];   // diisi dari GET /api/tts/voices (voice Gemini)
 let _previewAudio = null;        // elemen Audio aktif agar tidak tumpang tindih
 
 /** Render daftar voice ke #voicePicker (radio nama="voiceName" + tombol ▶). */
@@ -55,7 +55,7 @@ async function renderVoicePicker() {
 /** Ambil voice terpilih: { name, gender }. Default voice pertama di daftar bila belum ada. */
 function getSelectedVoice() {
     const el = document.querySelector('input[name="voiceName"]:checked');
-    const fallback = (GEMINI_VOICES_CACHE && GEMINI_VOICES_CACHE[0] && GEMINI_VOICES_CACHE[0].name) || 'alloy';
+    const fallback = (GEMINI_VOICES_CACHE && GEMINI_VOICES_CACHE[0] && GEMINI_VOICES_CACHE[0].name) || 'Kore';
     const name = el ? el.value : fallback;
     const v = (GEMINI_VOICES_CACHE || []).find(x => x.name === name);
     return { name, gender: v ? v.gender : 'unknown' };
@@ -68,14 +68,15 @@ function getSelectedVoice() {
  * @param {string} [text]  teks opsional (default cuplikan); utk "Dengar" adegan
  * @param {string} [emotion]  label emosi adegan (opsional) untuk mengarahkan gaya bicara
  */
-async function previewVoice(name, btn, text, emotion) {
+async function previewVoice(name, btn, text, emotion, tier) {
     if (btn) btn.disabled = true;
     try {
+        const t = tier || (typeof getSelectedTier === 'function' ? getSelectedTier() : '');
         const res = await fetch('/api/tts/preview', {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ voiceName: name, text: text || undefined, emotion: emotion || undefined }),
+            body: JSON.stringify({ voiceName: name, text: text || undefined, emotion: emotion || undefined, tier: t || undefined }),
         });
         const ct = res.headers.get('Content-Type') || '';
         if (!res.ok || ct.indexOf('audio') === -1) {
