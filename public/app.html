@@ -5,8 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VO Studio Pro - Commercial AI Affiliate &amp; Voice Over Suite</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- JSZip Library for 1-Click Full Project Download -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <!-- Google Identity Services (login OAuth tanpa client secret) -->
@@ -45,10 +43,10 @@
                 </div>
                 <div class="min-w-0">
                     <div class="flex items-center gap-1.5 flex-wrap">
-                        <h1 class="font-bold text-sm sm:text-lg tracking-tight text-white truncate">VO Affiliate Studio</h1>
+                        <h1 class="font-bold text-sm sm:text-lg tracking-tight text-white truncate">Pengisi suara video</h1>
                         <span class="px-1.5 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30 rounded-full shrink-0">Enterprise</span>
                     </div>
-                    <p class="text-xs text-slate-400 hidden md:block truncate">Smart Search Grounding + Multi-Scene Indonesian Voice Over &amp; Subtitle</p>
+                    <p class="text-xs text-slate-400 hidden md:block truncate">Voice Over beremosi + subtitle otomatis untuk video produk Anda</p>
                 </div>
             </div>
 
@@ -64,23 +62,11 @@
                     </button>
                 </div>
 
-                <!-- Tombol Pusat Unduh File Proyek -->
-                <button onclick="openDeployCenterModal()" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-extrabold text-xs shadow-lg transition flex items-center gap-1.5 shrink-0">
-                    <i class="fa-solid fa-cloud-arrow-down"></i>
-                    <span>Unduh File Lengkap</span>
-                </button>
-
                 <!-- Saldo / QRIS Top Up -->
                 <button onclick="openTopUpQrisModal()" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-[11px] sm:text-xs font-bold text-emerald-300 transition flex items-center gap-1.5 whitespace-nowrap shrink-0">
                     <i class="fa-solid fa-wallet text-emerald-400"></i>
                     <span id="userBalanceBadge">Rp 0</span>
                     <span class="px-1.5 py-0.5 bg-emerald-500 text-slate-950 rounded text-[9px] sm:text-[10px] font-extrabold">+ ISI</span>
-                </button>
-
-                <!-- Demo Video Trigger -->
-                <button id="loadDemoBtn" title="Muat Video Contoh" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 transition flex items-center gap-1.5 shrink-0">
-                    <i class="fa-solid fa-wand-magic-sparkles text-brand-400"></i>
-                    <span class="hidden sm:inline">Contoh</span>
                 </button>
 
                 <!-- Dasbor Superadmin (dirender hanya jika sesi unlimited) -->
@@ -160,7 +146,7 @@
             </div>
             <div class="p-3.5 rounded-2xl bg-slate-950 border border-amber-500/40 space-y-2">
                 <div class="flex items-center justify-between text-xs text-slate-400">
-                    <span>Biaya Layanan (<span id="qrisModelLabel">Flash 3.1</span>):</span>
+                    <span>Biaya Layanan (<span id="qrisModelLabel">Normal</span>):</span>
                     <span id="qrisBasePriceLabel" class="font-medium text-slate-200">Rp 1.200</span>
                 </div>
                 <div class="flex items-center justify-between text-xs text-slate-400">
@@ -192,134 +178,14 @@
         </div>
     </div>
 
-    <!-- PUSAT UNDUH FILE PROYEK LENGKAP -->
-    <div id="deployCenterModal" class="fixed inset-0 z-50 hidden bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl space-y-4 my-auto">
-            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div>
-                    <h3 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                        <i class="fa-solid fa-box-open text-amber-400"></i>
-                        Pusat Unduh Seluruh File Proyek
-                    </h3>
-                    <p class="text-xs text-slate-400">Unduh satu per satu atau langsung semuanya dalam 1 file ZIP.</p>
-                </div>
-                <button onclick="closeDeployCenterModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
-            </div>
-
-            <!-- Tombol 1-Klik Unduh Full ZIP -->
-            <div class="p-4 rounded-xl bg-gradient-to-r from-amber-500/15 via-orange-500/15 to-brand-500/15 border border-amber-500/30 flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div class="space-y-0.5 text-center sm:text-left">
-                    <div class="text-xs sm:text-sm font-extrabold text-white flex items-center justify-center sm:justify-start gap-1.5">
-                        <i class="fa-solid fa-file-zipper text-amber-400"></i>
-                        <span>Paket Lengkap (.ZIP Otomatis)</span>
-                    </div>
-                    <p class="text-[11px] text-slate-300">Berisi seluruh file proyek terstruktur: folder `public/`, folder `worker/` (Cloudflare Worker), `wrangler.toml`, `schema.sql`, launcher `.bat`, `.gitignore`, `ENV_TEMPLATE.env`, dan `.macro`.</p>
-                </div>
-                <button onclick="downloadAllAsZip()" id="zipDownloadBtn" class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs shadow-lg transition flex items-center justify-center gap-2 shrink-0" disabled=""><i class="fa-solid fa-circle-notch fa-spin"></i> Membuat File ZIP...</button>
-            </div>
-
-            <!-- Daftar File Satuan yang Dapat Diunduh -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                <!-- 1. index.html -->
-                <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2">
-                    <div class="min-w-0">
-                        <div class="font-bold text-white truncate flex items-center gap-1.5">
-                            <i class="fa-brands fa-html5 text-orange-400"></i> app.html
-                        </div>
-                        <p class="text-[10px] text-slate-400 truncate">Frontend Web Studio</p>
-                    </div>
-                    <button onclick="downloadDeploymentFile('html')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-semibold transition shrink-0">
-                        <i class="fa-solid fa-download mr-1"></i> Unduh
-                    </button>
-                </div>
-
-                <!-- 2. server.js -->
-                <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2">
-                    <div class="min-w-0">
-                        <div class="font-bold text-white truncate flex items-center gap-1.5">
-                            <i class="fa-brands fa-node-js text-emerald-400"></i> worker/index.js
-                        </div>
-                        <p class="text-[10px] text-slate-400 truncate">Cloudflare Worker (Hono) + AI + Webhook</p>
-                    </div>
-                    <button onclick="downloadDeploymentFile('server')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-semibold transition shrink-0">
-                        <i class="fa-solid fa-download mr-1"></i> Unduh
-                    </button>
-                </div>
-
-                <!-- 3. start_app.bat -->
-                <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2">
-                    <div class="min-w-0">
-                        <div class="font-bold text-white truncate flex items-center gap-1.5">
-                            <i class="fa-brands fa-windows text-sky-400"></i> start_app.bat
-                        </div>
-                        <p class="text-[10px] text-slate-400 truncate">Auto-Launcher Windows</p>
-                    </div>
-                    <button onclick="downloadDeploymentFile('bat')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-semibold transition shrink-0">
-                        <i class="fa-solid fa-download mr-1"></i> Unduh
-                    </button>
-                </div>
-
-                <!-- 4. push_to_github.bat -->
-                <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2">
-                    <div class="min-w-0">
-                        <div class="font-bold text-white truncate flex items-center gap-1.5">
-                            <i class="fa-brands fa-github text-purple-400"></i> push_to_github.bat
-                        </div>
-                        <p class="text-[10px] text-slate-400 truncate">Auto-Push ke Zozodoank/Voiceover</p>
-                    </div>
-                    <button onclick="downloadDeploymentFile('github_bat')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-semibold transition shrink-0">
-                        <i class="fa-solid fa-download mr-1"></i> Unduh
-                    </button>
-                </div>
-
-                <!-- 5. .gitignore -->
-                <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2">
-                    <div class="min-w-0">
-                        <div class="font-bold text-white truncate flex items-center gap-1.5">
-                            <i class="fa-solid fa-shield-halved text-rose-400"></i> .gitignore
-                        </div>
-                        <p class="text-[10px] text-slate-400 truncate">Pengaman Kunci &amp; Token</p>
-                    </div>
-                    <button onclick="downloadDeploymentFile('gitignore')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-semibold transition shrink-0">
-                        <i class="fa-solid fa-download mr-1"></i> Unduh
-                    </button>
-                </div>
-
-                <!-- 6. ENV_TEMPLATE.env -->
-                <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2">
-                    <div class="min-w-0">
-                        <div class="font-bold text-white truncate flex items-center gap-1.5">
-                            <i class="fa-solid fa-key text-yellow-400"></i> ENV_TEMPLATE.env
-                        </div>
-                        <p class="text-[10px] text-slate-400 truncate">Template Konfigurasi API</p>
-                    </div>
-                    <button onclick="downloadDeploymentFile('env')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-semibold transition shrink-0">
-                        <i class="fa-solid fa-download mr-1"></i> Unduh
-                    </button>
-                </div>
-
-                <!-- 7. MacroDroid File (.macro) -->
-                <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2 sm:col-span-2">
-                    <div class="min-w-0">
-                        <div class="font-bold text-white truncate flex items-center gap-1.5">
-                            <i class="fa-solid fa-robot text-brand-400"></i> qris_megakomindo_verifier.macro
-                        </div>
-                        <p class="text-[10px] text-slate-400 truncate">File MacroDroid siap impor (Key: MKM-QRIS-SECRET-2026-KEY99)</p>
-                    </div>
-                    <button onclick="downloadDeploymentFile('macro')" class="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-[11px] font-bold transition shrink-0">
-                        <i class="fa-solid fa-download mr-1"></i> Unduh .macro
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+    <!-- (Fitur Pusat Unduh File Proyek telah dihapus) -->
 
     <!-- MAIN CONTAINER -->
     <main class="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
         <!-- Toast Notification -->
         <div id="toastBox" class="fixed bottom-4 right-4 left-4 sm:left-auto z-50 sm:max-w-sm bg-slate-900 border border-slate-700 text-slate-100 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 transition-all duration-300 hidden">
             <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-lg shrink-0"></i>
-            <div class="flex-1 text-xs sm:text-sm font-medium break-words" id="toastText">Video contoh berhasil dimuat!</div>
+            <div class="flex-1 text-xs sm:text-sm font-medium break-words" id="toastText">Siap.</div>
             <button onclick="hideToast()" class="text-slate-400 hover:text-white shrink-0"><i class="fa-solid fa-xmark"></i></button>
         </div>
 
@@ -352,7 +218,7 @@
                         <div id="uploadSuccess" class="space-y-2">
                             <div class="flex items-center justify-center gap-2 text-emerald-400 font-semibold text-xs sm:text-sm">
                                 <i class="fa-solid fa-circle-check shrink-0"></i>
-                                <span id="fileNameDisplay" class="truncate max-w-[200px]">demo_produk_kecantikan.mp4</span>
+                                <span id="fileNameDisplay" class="truncate max-w-[200px]">Belum ada video</span>
                             </div>
                             <div class="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 text-[11px] text-slate-300">
                                 <span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-700">Durasi: <strong id="videoDurationBadge" class="text-brand-400">15.0s</strong></span>
@@ -400,26 +266,26 @@
                     </div>
                 </div>
 
-                <!-- 3. GEMINI TTS MODEL & PRICING -->
+                <!-- 3. KUALITAS SUARA TTS & HARGA -->
                 <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
                     <div class="flex flex-wrap items-center justify-between gap-2">
                         <h2 class="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
                             <span class="w-6 h-6 rounded-full bg-brand-500/20 text-brand-400 flex items-center justify-center text-xs font-bold shrink-0">3</span>
-                            <span>Model Gemini TTS &amp; Emosi</span>
+                            <span>Suara Voice Over</span>
                         </h2>
                         <span class="text-[11px] text-amber-400 font-semibold flex items-center gap-1">
                             <i class="fa-solid fa-qrcode"></i> Sistem Saldo / Bayar per VO
                         </span>
                     </div>
                     <div>
-                        <label class="block text-xs font-semibold text-slate-300 mb-2">Pilih Engine Gemini TTS (Tarif Komersial)</label>
+                        <label class="block text-xs font-semibold text-slate-300 mb-2">Pilih Kualitas</label>
                         <div class="grid grid-cols-3 gap-2" id="modelSelectorGrid">
                             <label class="cursor-pointer">
                                 <input type="radio" name="ttsModel" value="gemini-tts-flash-3.1" data-price="1200" checked="" class="peer sr-only">
                                 <div class="p-2 sm:p-2.5 rounded-xl border border-slate-700 bg-slate-950 peer-checked:border-brand-500 peer-checked:bg-brand-500/10 transition text-center h-full flex flex-col justify-between">
                                     <div>
-                                        <div class="text-xs font-bold text-white">Flash 3.1</div>
-                                        <div class="text-[10px] text-slate-400 mt-0.5">Natural</div>
+                                        <div class="text-xs font-bold text-white">Normal</div>
+                                        <div class="text-[10px] text-slate-400 mt-0.5">Standar</div>
                                     </div>
                                     <span class="inline-block mt-1.5 px-1.5 py-0.5 text-[10px] bg-emerald-500/20 text-emerald-300 rounded font-bold">Rp 1.200</span>
                                 </div>
@@ -428,7 +294,7 @@
                                 <input type="radio" name="ttsModel" value="gemini-tts-flash-3.7" data-price="1500" class="peer sr-only">
                                 <div class="p-2 sm:p-2.5 rounded-xl border border-slate-700 bg-slate-950 peer-checked:border-brand-500 peer-checked:bg-brand-500/10 transition text-center h-full flex flex-col justify-between">
                                     <div>
-                                        <div class="text-xs font-bold text-white">Flash 3.7</div>
+                                        <div class="text-xs font-bold text-white">Sedang</div>
                                         <div class="text-[10px] text-slate-400 mt-0.5">Ekspresif</div>
                                     </div>
                                     <span class="inline-block mt-1.5 px-1.5 py-0.5 text-[10px] bg-brand-500/20 text-brand-300 rounded font-bold">Rp 1.500</span>
@@ -438,8 +304,8 @@
                                 <input type="radio" name="ttsModel" value="gemini-tts-flash-3.8" data-price="1800" class="peer sr-only">
                                 <div class="p-2 sm:p-2.5 rounded-xl border border-slate-700 bg-slate-950 peer-checked:border-brand-500 peer-checked:bg-brand-500/10 transition text-center h-full flex flex-col justify-between">
                                     <div>
-                                        <div class="text-xs font-bold text-white">Flash 3.8</div>
-                                        <div class="text-[10px] text-slate-400 mt-0.5">Ultra HD</div>
+                                        <div class="text-xs font-bold text-white">Tinggi</div>
+                                        <div class="text-[10px] text-slate-400 mt-0.5">Premium</div>
                                     </div>
                                     <span class="inline-block mt-1.5 px-1.5 py-0.5 text-[10px] bg-amber-500/25 text-amber-300 rounded font-bold">Rp 1.800</span>
                                 </div>
@@ -449,7 +315,7 @@
 
                     <div class="space-y-2">
                         <div class="flex items-center justify-between gap-2">
-                            <label class="text-xs font-semibold text-slate-300">Pilih Voice Over (Gemini TTS)</label>
+                            <label class="text-xs font-semibold text-slate-300">Pilih Model Suara</label>
                             <span class="text-[11px] text-slate-400"><i class="fa-solid fa-headphones"></i> Klik &#9658; untuk dengar</span>
                         </div>
                         <div id="voicePicker" class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-64 overflow-y-auto pr-1">
@@ -520,7 +386,7 @@
                                 <i class="fa-solid fa-clapperboard text-brand-400 shrink-0"></i>
                                 <span class="truncate">Output Video + Voice Over Emosi + Subtitle</span>
                             </h2>
-                            <p class="text-[11px] sm:text-xs text-slate-400 mt-0.5 truncate" id="activeModelStatusLabel">Model: Flash 3.1 • Pola Emosi Per Adegan</p>
+                            <p class="text-[11px] sm:text-xs text-slate-400 mt-0.5 truncate" id="activeModelStatusLabel">Kualitas: Normal • Emosi Per Adegan</p>
                         </div>
                         <div class="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto shrink-0">
                             <button id="playMergedBtn" onclick="togglePlayMergedVideo()" disabled="" class="justify-center px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition flex items-center gap-1.5">
@@ -536,14 +402,14 @@
 
                     <div class="relative rounded-2xl overflow-hidden bg-black aspect-video max-h-[380px] w-full mx-auto flex items-center justify-center border border-slate-800 shadow-inner">
                         <video id="mainVideo" class="w-full h-full object-contain hidden" playsinline="" crossorigin="anonymous"></video>
-                        <canvas id="demoVideoCanvas" width="720" height="405" class="w-full h-full object-contain"></canvas>
+                        <!-- (kanvas demo dihapus; visual hanya dari video unggahan) -->
                         
-                        <div id="videoEmptyOverlay" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 text-center p-4 hidden">
+                        <div id="videoEmptyOverlay" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 text-center p-4">
                             <div class="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 mb-3">
                                 <i class="fa-solid fa-film text-xl"></i>
                             </div>
                             <p class="text-xs sm:text-sm font-semibold text-slate-300">Belum Ada Video Produk</p>
-                            <p class="text-[11px] text-slate-500 max-w-xs mt-1">Unggah video atau klik tombol <strong>"Contoh"</strong> di atas.</p>
+                            <p class="text-[11px] text-slate-500 max-w-xs mt-1">Unggah video produk Anda untuk mulai.</p>
                         </div>
 
                         <div id="sceneOverlayBadge" class="hidden absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md border border-white/15 text-[10px] sm:text-[11px] font-semibold text-white flex items-center gap-1.5">
@@ -572,20 +438,6 @@
                             </div>
                         </div>
                     </div>
-                </div>
-
-                <!-- RESEARCH CARD -->
-                <div id="researchCard" class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-3">
-                    <div class="flex flex-wrap items-center justify-between gap-2">
-                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-                            <i class="fa-brands fa-google text-emerald-400"></i>
-                            <span>Hasil Riset Produk</span>
-                        </h3>
-                        <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Google Grounding</span>
-                    </div>
-                    <p id="productSummaryText" class="text-xs text-slate-300 leading-relaxed bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                        Belum ada riset. Masukkan nama produk dan klik proses.
-                    </p>
                 </div>
 
                 <!-- CAPTION & AFFILIATE BOX -->
@@ -686,7 +538,6 @@
     <script src="js/audio-engine.js"></script>
     <script src="js/studio.js"></script>
     <script src="js/playback.js"></script>
-    <script src="js/deploy.js"></script>
     <script src="js/app.js"></script>
 
 </body>

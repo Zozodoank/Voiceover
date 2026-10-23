@@ -12,13 +12,18 @@ export function isSuperadminEmail(env, email) {
     return superadminList(env).includes(String(email || '').toLowerCase());
 }
 
-/** Upsert user saat login; flag unlimited ditetapkan server-side dari daftar superadmin. */
-export async function upsertUser(db, { sub, email, name, unlimited }) {
+/**
+ * Upsert user saat login; flag unlimited ditetapkan server-side dari daftar superadmin.
+ * initialBalance HANYA dipakai saat baris baru dibuat (INSERT). On-conflict (login berikutnya)
+ * TIDAK menyentuh balance, sehingga kredit berjalan user tidak berubah.
+ */
+export async function upsertUser(db, { sub, email, name, unlimited, initialBalance = 0 }) {
+    const startBalance = Math.max(0, Number(initialBalance) || 0);
     await db.prepare(
         `INSERT INTO users (email, sub, name, balance, unlimited, created_at)
-         VALUES (?, ?, ?, 0, ?, datetime('now'))
+         VALUES (?, ?, ?, ?, ?, datetime('now'))
          ON CONFLICT(email) DO UPDATE SET sub = excluded.sub, name = excluded.name, unlimited = excluded.unlimited`
-    ).bind(email, sub, name, unlimited ? 1 : 0).run();
+    ).bind(email, sub, name, startBalance, unlimited ? 1 : 0).run();
     return getUser(db, email);
 }
 

@@ -25,7 +25,9 @@ router.post('/auth/session', async (c) => {
     }
 
     const unlimited = isSuperadminEmail(c.env, profile.email);
-    const user = await upsertUser(c.env.VO_DB, { ...profile, unlimited });
+    // Kredit gratis pendaftaran baru (saldo awal). Non-superadmin saja; login berikutnya tak menyentuh balance.
+    const welcomeCredit = Math.max(0, Number(c.env.WELCOME_CREDIT ?? 3600) || 0);
+    const user = await upsertUser(c.env.VO_DB, { ...profile, unlimited, initialBalance: unlimited ? 0 : welcomeCredit });
     const token = await signSession(c.env, { ...profile, unlimited });
     c.res.headers.set('Set-Cookie', sessionCookie(token, isSecureRequest(c)));
     return c.json({

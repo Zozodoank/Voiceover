@@ -147,7 +147,7 @@ export async function analyzeVideo(env, { frames, productName, affiliateLink, du
     const frameTimes = frames.map((_, i) => i);
     const prompt = buildAnalysisPrompt({ productName, affiliateLink, duration, gender, frameTimes, platform });
     const fallbackEnabled = String(env.GEMINI_FALLBACK_ENABLED ?? 'true') !== 'false';
-    const models = String(env.GEMINI_MODELS || env.GEMINI_MODEL || 'gemini-2.5-flash')
+    const models = String(env.GEMINI_MODELS || env.GEMINI_MODEL || 'gemini-3.5-flash')
         .split(',').map(s => s.trim()).filter(Boolean);
     let lastError = null;
 

@@ -1,4 +1,4 @@
-// public/js/app.js - Boot sequence: wajib sesi login -> baru muat data tenant & demo.
+// public/js/app.js - Boot sequence: wajib sesi login -> baru muat data tenant.
 window.onload = async function () {
     try {
         await loadSession(); // GET /api/me; lempar jika cookie sesi tidak ada/kadaluarsa
@@ -11,5 +11,4 @@ window.onload = async function () {
     applySessionToHeader();
     updateHistoryBadge();
     renderVoicePicker();
-    document.getElementById('loadDemoBtn').click();
 };

@@ -25,8 +25,9 @@ database_id = "GANTI_DENGAN_ID_D1_ANDA"           # npx wrangler d1 create vo-st
 [vars]
 GOOGLE_CLIENT_ID = ""                              # Client ID OAuth dari Google Cloud Console
 SUPERADMIN_EMAILS = "jho.j80@gmail.com"
-GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_MODELS = "gemini-2.5-flash, gemini-2.5-flash-lite"   # rantai fallback sebelum AIVene (hemat free tier)
+WELCOME_CREDIT = "3600"   # saldo awal pendaftar baru (Rupiah) = 3 x tier termurah 1.200 -> 3 VO gratis
+GEMINI_MODEL = "gemini-3.5-flash"
+GEMINI_MODELS = "gemini-3.5-flash, gemini-3.5-flash-lite, gemini-3.1-flash-lite"   # rantai fallback sebelum AIVene (hemat free tier; 2.5-flash sudah 404)
 AIVENE_MODEL = "qwen3.8-flash"
 AIVENE_BASE_URL = "https://api.aivene.com/v1"
 AIVENE_TTS_MODEL = "tts-1"                            # model TTS untuk pratinjau suara (via AIVene /audio/speech)

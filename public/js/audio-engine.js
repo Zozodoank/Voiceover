@@ -1,6 +1,6 @@
 // public/js/audio-engine.js - Mesin audio Gemini TTS: prerender per adegan, playback tersinkron durasi
 // asli, dan ekspor video WebM nyata (kanvas kompositor + MediaRecorder + audio mix + burn subtitle).
-// Classic script: memakai global (generatedScenesData, sceneAudios, getSelectedVoice, drawDemoCanvasScene,
+// Classic script: memakai global (generatedScenesData, sceneAudios, getSelectedVoice,
 // getVisualSource, showToast, apiFetch).
 
 let _audioCtx = null;
@@ -136,8 +136,6 @@ function updateOverlayDOM(idx) {
     const badge = document.getElementById('currentSceneBadgeText');
     if (sub) sub.innerText = scene.text || '';
     if (badge) badge.innerText = `Adegan ${idx + 1}: ${scene.emotion || ''}`;
-    const src = getVisualSource();
-    if (src.type === 'canvas') drawDemoCanvasScene(idx);
 }
 
 function stopEverything() {
@@ -290,9 +288,6 @@ function drawFrame(cctx, comp, idx) {
     cctx.fillStyle = '#000'; cctx.fillRect(0, 0, comp.width, comp.height);
     if (vis.type === 'video' && vis.el && vis.el.readyState >= 2) {
         drawContain(cctx, vis.el, comp.width, comp.height);
-    } else {
-        // demo: gambar ulang adegan ke kanvas kompositor
-        drawDemoInto(cctx, comp, idx);
     }
     // badge adegan (kiri atas)
     cctx.fillStyle = 'rgba(0,0,0,0.55)';
@@ -313,13 +308,7 @@ function drawFrame(cctx, comp, idx) {
     }
 }
 
-function drawDemoInto(cctx, comp, idx) {
-    // pakai kanvas demo yang sudah digambar studio.js, salin ke kompositor (contain)
-    const dc = document.getElementById('demoVideoCanvas');
-    drawContain(cctx, dc, comp.width, comp.height);
-}
-
-/** Gambar sumber (video/canvas) menjaga rasio aspek di dalam w×h, ter-center. */
+/** Gambar sumber video menjaga rasio aspek di dalam w×h, ter-center. */
 function drawContain(cctx, el, w, h) {
     const sw = el.videoWidth || el.width || w, sh = el.videoHeight || el.height || h;
     const scale = Math.min(w / sw, h / sh);

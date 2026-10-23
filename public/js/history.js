@@ -39,7 +39,6 @@ function renderHistoryList() {
                     <h3 class="text-sm font-bold text-white truncate">${item.productName}</h3>
                     <span class="px-2 py-0.5 bg-slate-800 text-slate-300 rounded text-[10px] font-mono">${item.modelLabel}</span>
                 </div>
-                <p class="text-xs text-slate-400 line-clamp-1"><strong>Riset:</strong> ${item.researchSummary}</p>
                 <div class="flex items-center gap-3 text-[11px] text-slate-500">
                     <span><i class="fa-regular fa-clock mr-1"></i> ${item.timestamp}</span>
                     <span><i class="fa-solid fa-film mr-1"></i> ${item.scenesCount} Adegan</span>
@@ -66,7 +65,6 @@ function loadHistoryRecord(idx) {
     document.getElementById('affiliateLinkInput').value = item.affiliateLink;
     document.getElementById('captionOutput').value = item.caption;
     document.getElementById('hashtagsOutput').innerText = item.hashtags;
-    document.getElementById('productSummaryText').innerText = item.researchSummary;
     document.getElementById('affiliateCardTitle').innerText = item.productName;
     document.getElementById('affiliateLinkDisplay').innerText = item.affiliateLink;
     

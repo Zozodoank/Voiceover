@@ -1,41 +1,23 @@
-// public/js/studio.js - Upload/demo video, generator VO & timeline adegan
-// Pratinjau & pemutaran suara kini memakai Gemini TTS asli via previewVoice()/getSelectedVoice() (voices.js).
+// public/js/studio.js - Upload video, generator VO & timeline adegan
+// Pratinjau & pemutaran suara memakai TTS via previewVoice()/getSelectedVoice() (voices.js).
 
-document.getElementById('loadDemoBtn').addEventListener('click', () => {
-    isUsingDemoVideo = true;
-    uploadedVideoFile = null;      // mode demo: jangan pakai file yang pernah diupload
-    videoSourceIsRemote = false;
-    sceneAudios = []; sceneAudiosKey = '';
-    document.getElementById('uploadPrompt').classList.add('hidden');
-    document.getElementById('uploadSuccess').classList.remove('hidden');
-    document.getElementById('fileNameDisplay').innerText = "demo_produk_kecantikan.mp4";
-    document.getElementById('videoDurationBadge').innerText = "15.0s";
-    document.getElementById('sceneCountBadge').innerText = "3 Segmen";
-    document.getElementById('videoEmptyOverlay').classList.add('hidden');
-    document.getElementById('productNameInput').value = "Skintific 5X Ceramide Barrier Moisture Gel";
-    document.getElementById('affiliateLinkInput').value = "https://shope.ee/8pN9xProdukViralID";
-    
-    drawDemoCanvasScene(0);
-    showToast('Video contoh berhasil dimuat!', 'success');
-});
-
-function drawDemoCanvasScene(sceneIdx) {
-    const canvas = document.getElementById('demoVideoCanvas');
-    canvas.classList.remove('hidden');
-    document.getElementById('mainVideo').classList.add('hidden');
-    const ctx = canvas.getContext('2d');
-    
-    ctx.fillStyle = sceneIdx === 0 ? '#1e1b4b' : sceneIdx === 1 ? '#312e81' : '#4338ca';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 28px Inter';
-    ctx.textAlign = 'center';
-    ctx.fillText("Skintific 5X Ceramide Gel", canvas.width/2, canvas.height/2 - 20);
-    ctx.font = '16px Inter';
-    ctx.fillStyle = '#cbd5e1';
-    ctx.fillText(`Adegan Contoh #${sceneIdx + 1} - Pola Emosi Terapan`, canvas.width/2, canvas.height/2 + 20);
+// Info di bawah judul hanya menampilkan Kualitas (tanpa membocorkan model/engine ke pengguna).
+function qualityLabelForSelectedModel() {
+    const r = document.querySelector('input[name="ttsModel"]:checked');
+    if (!r) return '';
+    const el = r.parentElement.querySelector('.text-xs.font-bold');
+    return (el ? el.innerText : '').trim();
 }
+function refreshActiveModelStatusLabel() {
+    const el = document.getElementById('activeModelStatusLabel');
+    if (!el) return;
+    const q = qualityLabelForSelectedModel();
+    if (q) el.innerText = `Kualitas: ${q} • Emosi Per Adegan`;
+}
+(function wireModelQualityLabel() {
+    document.querySelectorAll('input[name="ttsModel"]').forEach((inp) => inp.addEventListener('change', refreshActiveModelStatusLabel));
+    refreshActiveModelStatusLabel();
+})();
 
 async function initiateCommercialGeneration() {
     const productName = document.getElementById('productNameInput').value.trim();
@@ -81,13 +63,8 @@ async function initiateCommercialGeneration() {
         if (uploadedVideoFile) {
             const frames = await extractFrames(uploadedVideoFile, { fps: 1, maxFrames: 8, width: 384, quality: 0.7 });
             frameDataUrls = frames.map(f => f.dataUrl);
-        } else if (isUsingDemoVideo) {
-            // Video demo: pakai ilustrasi canvas 3 adegan sebagai frame analisa
-            drawDemoCanvasScene(0);
-            const c = document.getElementById('demoVideoCanvas');
-            frameDataUrls = [c.toDataURL('image/jpeg', 0.7)];
         } else {
-            throw new Error('Belum ada video dimuat. Upload video atau klik "Contoh".');
+            throw new Error('Belum ada video dimuat. Upload video produk terlebih dahulu.');
         }
     } catch (err) {
         statusBox.classList.add('hidden');
@@ -135,9 +112,6 @@ async function initiateCommercialGeneration() {
     if (!userUnlimited && resp.balance != null) userBalance = Number(resp.balance) || 0;
     refreshBalanceBadge();
 
-    generatedProductResearch = r.research || `Riset AI untuk ${productName}: potensi visual kuat untuk konversi affiliate.`;
-    document.getElementById('productSummaryText').innerText = generatedProductResearch;
-
     // Menerapkan Pola Emosi Berbeda di Setiap Adegan (Per Kalimat Voice Over)
     generatedScenesData = r.scenes;
     const platformCtaText = { shopee: 'cek keranjang orange sekarang', tiktok: 'cek keranjang kuning di bawah', reels: 'klik link di bio', youtube: 'subscribe & cek link di deskripsi' }[platform] || 'cek keranjang sekarang';
@@ -153,7 +127,7 @@ async function initiateCommercialGeneration() {
 
     document.getElementById('playMergedBtn').removeAttribute('disabled');
     document.getElementById('exportMergedBtn').removeAttribute('disabled');
-    document.getElementById('activeModelStatusLabel').innerText = `Voice: ${voiceName} • ${gender === 'female' ? 'Wanita' : 'Pria'} • ${platform.toUpperCase()} • Naskah via ${resp.provider === 'aivene' ? 'AIVene Qwen' : ('Gemini · ' + String(resp.provider).split(':')[1])}`;
+    document.getElementById('activeModelStatusLabel').innerText = `Kualitas: ${modelName} • Emosi Per Adegan`;
 
     const newRecord = {
         productName,
@@ -161,7 +135,6 @@ async function initiateCommercialGeneration() {
         modelLabel: modelName,
         gender,
         voiceName,
-        researchSummary: generatedProductResearch,
         caption: generatedCaptionText,
         hashtags: generatedHashtagsText,
         scenesCount: generatedScenesData.length,

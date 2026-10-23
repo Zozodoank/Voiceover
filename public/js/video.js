@@ -13,11 +13,9 @@ function handleVideoFile(input) {
     }
 
     uploadedVideoFile = file;
-    isUsingDemoVideo = false;
     videoSourceIsRemote = false;
 
     const mainVideo = document.getElementById('mainVideo');
-    const canvas = document.getElementById('demoVideoCanvas');
     if (_videoObjectUrl) { try { URL.revokeObjectURL(_videoObjectUrl); } catch (e) { /* ignore */ } }
     _videoObjectUrl = URL.createObjectURL(file);
     mainVideo.crossOrigin = 'anonymous';
@@ -25,9 +23,8 @@ function handleVideoFile(input) {
     mainVideo.muted = false;
     mainVideo.loop = false;
 
-    // Tampilkan video, sembunyikan kanvas demo & overlay kosong
+    // Tampilkan video & sembunyikan overlay kosong
     mainVideo.classList.remove('hidden');
-    if (canvas) canvas.classList.add('hidden');
     document.getElementById('videoEmptyOverlay').classList.add('hidden');
     document.getElementById('uploadPrompt').classList.add('hidden');
     document.getElementById('uploadSuccess').classList.remove('hidden');
@@ -47,20 +44,9 @@ function handleVideoFile(input) {
     showToast('Video dimuat: ' + file.name, 'success');
 }
 
-/** Sumber visual aktif untuk playback/ekspor: { type:'video'|'canvas', el }. */
+/** Sumber visual aktif untuk playback/ekspor: selalu elemen video unggahan. */
 function getVisualSource() {
-    const canvas = document.getElementById('demoVideoCanvas');
-    const mainVideo = document.getElementById('mainVideo');
-    if (isUsingDemoVideo || !uploadedVideoFile || !mainVideo || mainVideo.classList.contains('hidden')) {
-        return { type: 'canvas', el: canvas };
-    }
-    return { type: 'video', el: mainVideo };
-}
-
-/** Tampilkan ulang visual demo (dipakai saat mode demo) ke kanvas. */
-function refreshVisualForScene(idx) {
-    const src = getVisualSource();
-    if (src.type === 'canvas') drawDemoCanvasScene(idx);
+    return { type: 'video', el: document.getElementById('mainVideo') };
 }
 
 // Wiring: #videoInput (input file di dropzone) -> handleVideoFile.

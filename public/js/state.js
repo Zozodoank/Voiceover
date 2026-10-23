@@ -8,11 +8,9 @@ let activeOrder = null;
 let historyRecords = []; // diisi loadHistoryFromStorage() setelah sesi known (riwayat privat per akun)
 
 let uploadedVideoFile = null;
-let isUsingDemoVideo = false;
 let generatedScenesData = [];
 let generatedCaptionText = "";
 let generatedHashtagsText = "";
-let generatedProductResearch = "";
 
 // Sumber video dari URL lintas-origin (bisa menodai canvas -> ekspor WebM diblokir). Default: file lokal.
 let videoSourceIsRemote = false;
