@@ -1,7 +1,7 @@
-// public/js/voices.js - Pemilih 30 voice Gemini TTS + pratinjau suara asli (via /api/tts/*).
+// public/js/voices.js - Pemilih voice TTS (AIVene) + pratinjau suara asli (via /api/tts/*).
 // Classic script (bukan ES module): memakai global showToast (ui.js) & apiFetch (api.js).
 
-let GEMINI_VOICES_CACHE = [];   // diisi dari GET /api/tts/voices
+let GEMINI_VOICES_CACHE = [];   // diisi dari GET /api/tts/voices (kini voice AIVene)
 let _previewAudio = null;        // elemen Audio aktif agar tidak tumpang tindih
 
 /** Render daftar voice ke #voicePicker (radio nama="voiceName" + tombol ▶). */
@@ -26,9 +26,9 @@ async function renderVoicePicker() {
         ? '<i class="fa-solid fa-venus text-pink-400"></i>'
         : '<i class="fa-solid fa-mars text-sky-400"></i>';
 
-    box.innerHTML = voices.map(v => `
+    box.innerHTML = voices.map((v, idx) => `
         <label data-voice="${v.name}" class="voice-opt flex items-center gap-2 p-2 rounded-lg border border-slate-800 bg-slate-950 hover:border-slate-600 cursor-pointer transition">
-            <input type="radio" name="voiceName" value="${v.name}" ${v.name === 'Kore' ? 'checked' : ''} class="w-4 h-4 shrink-0 accent-indigo-500">
+            <input type="radio" name="voiceName" value="${v.name}" ${idx === 0 ? 'checked' : ''} class="w-4 h-4 shrink-0 accent-indigo-500">
             <div class="w-5 text-center shrink-0">${icon(v.gender)}</div>
             <div class="min-w-0 flex-1">
                 <div class="text-xs font-semibold text-white truncate">${v.name}</div>
@@ -52,12 +52,13 @@ async function renderVoicePicker() {
     paint();
 }
 
-/** Ambil voice terpilih: { name, gender }. Default Kore (female) bila belum ada. */
+/** Ambil voice terpilih: { name, gender }. Default voice pertama di daftar bila belum ada. */
 function getSelectedVoice() {
     const el = document.querySelector('input[name="voiceName"]:checked');
-    const name = el ? el.value : 'Kore';
+    const fallback = (GEMINI_VOICES_CACHE && GEMINI_VOICES_CACHE[0] && GEMINI_VOICES_CACHE[0].name) || 'alloy';
+    const name = el ? el.value : fallback;
     const v = (GEMINI_VOICES_CACHE || []).find(x => x.name === name);
-    return { name, gender: v ? v.gender : 'female' };
+    return { name, gender: v ? v.gender : 'unknown' };
 }
 
 /**

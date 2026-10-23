@@ -27,7 +27,8 @@ GOOGLE_CLIENT_ID = ""                              # Client ID OAuth dari Google
 SUPERADMIN_EMAILS = "jho.j80@gmail.com"
 GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_MODELS = "gemini-2.5-flash, gemini-2.5-flash-lite"   # rantai fallback sebelum AIVene (hemat free tier)
-GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts"           # model untuk pratinjau suara (Voice Over)
 AIVENE_MODEL = "qwen3.8-flash"
-AIVENE_BASE_URL = "https://aivene.com/v1beta"
+AIVENE_BASE_URL = "https://api.aivene.com/v1"
+AIVENE_TTS_MODEL = "tts-1"                            # model TTS untuk pratinjau suara (via AIVene /audio/speech)
+AIVENE_TTS_VOICES = ""                                # kosong = voice default; atau daftar nama dipisah koma (mis. "alloy,nova,shimmer")
 GEMINI_FALLBACK_ENABLED = "true"

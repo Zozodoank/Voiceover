@@ -32,8 +32,8 @@ if not exist ".dev.vars" if not exist ".env" (
 echo [INFO] Menyalakan Cloudflare Worker lokal di http://localhost:8787 ...
 echo [INFO] Browser default terbuka otomatis ke aplikasi studio SETELAH server siap...
 
-rem Buka aplikasi di browser default begitu server merespons (maks ~32 detik), tanpa memblokir wrangler.
-start "Buka Aplikasi VO" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "for($i=0;$i -lt 40;$i++){try{Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:8787/' -TimeoutSec 1|Out-Null;Start-Process 'http://localhost:8787/app.html';break}catch{Start-Sleep -Milliseconds 800}}"
+rem Buka aplikasi di browser default begitu server siap (curl retry s.d. ~40 detik), lalu 'start' URL.
+start "" /b cmd /c "curl -s -o nul --retry 40 --retry-delay 1 --retry-connrefused http://localhost:8787/ && start http://localhost:8787/app.html"
 
 npx wrangler dev
 pause

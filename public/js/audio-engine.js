@@ -47,7 +47,7 @@ async function fetchPreviewBuffer(voiceName, text, emotion) {
 /** Buat audio untuk SEMUA adegan (paralel terbatas 3). Slot gagal -> null (dipakai saat putar/ekspor). */
 async function prerenderSceneAudios() {
     const scenes = generatedScenesData || [];
-    const vName = (typeof getSelectedVoice === 'function') ? getSelectedVoice().name : 'Kore';
+    const vName = (typeof getSelectedVoice === 'function') ? getSelectedVoice().name : 'alloy';
     const sig = sceneAudioSignature();
     sceneAudios = new Array(scenes.length).fill(null);
     sceneAudiosKey = ''; // tandai belum siap sampai selesai
