@@ -36,7 +36,14 @@ router.post('/tts/preview', requireAuth, async (c) => {
             },
         });
     } catch (e) {
-        return c.json({ error: 'tts_failed', message: 'Pratinjau suara gagal: ' + String(e.message || e) }, 502);
+        const s = e && e.status;
+        if (s === 429) {
+            return c.json({ error: 'tts_quota', message: 'Kuota gratis Gemini TTS hari ini habis (±10 permintaan/hari). Coba beberapa jam lagi, atau gunakan API key dengan billing aktif.' }, 429);
+        }
+        if (s === 401 || s === 403) {
+            return c.json({ error: 'tts_key_invalid', message: 'GEMINI_API_KEY tidak valid / tidak punya akses TTS. Periksa kunci di server.' }, 502);
+        }
+        return c.json({ error: 'tts_failed', message: 'Pratinjau suara gagal' + (s ? ` (Gemini HTTP ${s})` : '') + ': ' + String(e.message || e) }, 502);
     }
 });
 

@@ -18,22 +18,22 @@ if %errorlevel% neq 0 (
 )
 
 if not exist "node_modules" (
-    echo [INFO] Menginstal modul (wrangler + hono + jose)...
+    echo [INFO] Menginstal modul: wrangler, hono, jose ...
     call npm install
 )
 
-if not exist ".dev.vars" (
+if not exist ".dev.vars" if not exist ".env" (
     echo [INFO] Membuat template .dev.vars dari .dev.vars.example...
     copy .dev.vars.example .dev.vars >nul
-    echo [INFO] Silakan edit .dev.vars lalu isi API key, kemudian jalankan ulang file ini.
-    pause
-    exit /b 0
+    echo [PERINGATAN] .dev.vars berisi placeholder. Isi API key agar AI dan login berfungsi.
+    echo [INFO] Server tetap dijalankan - edit file lalu jalankan ulang bila perlu.
 )
 
 echo [INFO] Menyalakan Cloudflare Worker lokal di http://localhost:8787 ...
-echo [INFO] Membuka Browser Default secara otomatis...
+echo [INFO] Browser default terbuka otomatis ke aplikasi studio SETELAH server siap...
 
-start "" cmd /c "timeout /t 3 /nobreak >nul && start http://localhost:8787"
+rem Buka aplikasi di browser default begitu server merespons (maks ~32 detik), tanpa memblokir wrangler.
+start "Buka Aplikasi VO" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "for($i=0;$i -lt 40;$i++){try{Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:8787/' -TimeoutSec 1|Out-Null;Start-Process 'http://localhost:8787/app.html';break}catch{Start-Sleep -Milliseconds 800}}"
 
 npx wrangler dev
 pause

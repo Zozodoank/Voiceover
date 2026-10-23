@@ -138,12 +138,14 @@ async function callGeminiTts(env, voiceName, text, styleDirective) {
         if (!inline || !inline.data) throw new Error('Gemini TTS tidak mengembalikan audio');
         return inline;
     };
-    // Graceful degradation: coba dengan gaya; bila gagal (HTTP error ATAUP kandidat tanpa audio),
-    // ulangi tanpa gaya agar pratinjau tidak pernah lebih buruk dari perilaku tanpa-emosi.
+    // Graceful degradation: coba dengan gaya; bila gagal karena alasan gaya (HTTP non-kuer / kandidat tanpa audio),
+    // ulangi TANPA gaya. Namun JANGAN buang panggilan kedua untuk error kuota/autentikasi (hemat kuota gratis).
     if (styleDirective) {
         try {
             return await doReq(true);
         } catch (e) {
+            const s = e && e.status;
+            if (s === 429 || s === 401 || s === 403) throw e;
             return await doReq(false);
         }
     }
