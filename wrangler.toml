@@ -23,7 +23,7 @@ database_id = "GANTI_DENGAN_ID_D1_ANDA"           # npx wrangler d1 create vo-st
 
 # Variabel non-rahasia (rahasia via: npx wrangler secret put NAME / file .dev.vars saat dev)
 [vars]
-GOOGLE_CLIENT_ID = ""                              # Client ID OAuth dari Google Cloud Console
+GOOGLE_CLIENT_ID = "646496051749-rf1b1gbke3954uqb3l1smqfnh9b7c9c3.apps.googleusercontent.com"                              # Client ID OAuth dari Google Cloud Console
 SUPERADMIN_EMAILS = "jho.j80@gmail.com"
 WELCOME_CREDIT = "3600"   # saldo awal pendaftar baru (Rupiah) = 3 x tier termurah 1.200 -> 3 VO gratis
 GEMINI_MODEL = "gemini-3.5-flash"
