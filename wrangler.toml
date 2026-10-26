@@ -1,6 +1,6 @@
 # wrangler.toml - Konfigurasi Cloudflare Worker (free tier)
 # Jalankan: npx wrangler dev (lokal, http://localhost:8787) | npx wrangler deploy (produksi)
-name = "vo-affiliate-studio"
+name = "voiceover"
 main = "worker/index.js"
 compatibility_date = "2026-10-01"
 
@@ -13,13 +13,13 @@ not_found_handling = "single-page-application"
 # KV: menyimpan order QRIS ber-TTL (bukan saldo - saldo ada di D1 agar kuat-konsisten)
 [[kv_namespaces]]
 binding = "ORDERS"
-id = "GANTI_DENGAN_ID_KV_ANDA"                    # npx wrangler kv namespace create ORDERS
+id = "1226b5b8c77546a8bbf8ecfb6ecabc45"                    # npx wrangler kv namespace create ORDERS
 
 # D1: database users (email, saldo, unlimited, total_gen)
 [[d1_databases]]
 binding = "VO_DB"
 database_name = "vo-studio-db"
-database_id = "GANTI_DENGAN_ID_D1_ANDA"           # npx wrangler d1 create vo-studio-db ; lalu npx wrangler d1 execute vo-studio-db --local --file=./schema.sql
+database_id = "323d1ad5-adc8-4afe-b764-c4625e11c340"           # npx wrangler d1 create vo-studio-db ; lalu npx wrangler d1 execute vo-studio-db --local --file=./schema.sql
 
 # Variabel non-rahasia (rahasia via: npx wrangler secret put NAME / file .dev.vars saat dev)
 [vars]
