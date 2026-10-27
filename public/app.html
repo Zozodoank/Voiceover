@@ -208,14 +208,14 @@
 
                     <div id="dropZone" class="relative border-2 border-dashed border-slate-700 hover:border-brand-500 rounded-xl p-4 sm:p-6 text-center transition-all cursor-pointer bg-slate-950/50 group">
                         <input type="file" id="videoInput" accept="video/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
-                        <div id="uploadPrompt" class="space-y-2 hidden">
+                        <div id="uploadPrompt" class="space-y-2">
                             <div class="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-slate-800 group-hover:bg-brand-500/20 text-slate-400 group-hover:text-brand-400 mx-auto flex items-center justify-center transition">
                                 <i class="fa-solid fa-cloud-arrow-up text-lg sm:text-xl"></i>
                             </div>
-                            <div class="text-xs sm:text-sm font-semibold text-slate-200">Klik atau seret video produk ke sini</div>
-                            <p class="text-[11px] sm:text-xs text-slate-400">MP4, WebM, MOV (Maksimal 30 detik)</p>
+                            <div class="text-sm sm:text-base font-bold uppercase tracking-wide text-slate-200">Upload Video</div>
+                            <p class="text-[11px] sm:text-xs text-slate-400">Maksimal 30 detik</p>
                         </div>
-                        <div id="uploadSuccess" class="space-y-2">
+                        <div id="uploadSuccess" class="space-y-2 hidden">
                             <div class="flex items-center justify-center gap-2 text-emerald-400 font-semibold text-xs sm:text-sm">
                                 <i class="fa-solid fa-circle-check shrink-0"></i>
                                 <span id="fileNameDisplay" class="truncate max-w-[200px]">Belum ada video</span>
