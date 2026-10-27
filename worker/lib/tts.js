@@ -292,6 +292,8 @@ export async function synthesizeGemini(env, { text, voiceName, emotion, tier }) 
             if (!bytes.byteLength) throw new Error('Gemini TTS mengembalikan audio kosong');
 
             const mime = String(audioPart.inlineData.mimeType || '');
+            // Log server (bukan header/response): berguna memantau model mana yang melayani tiap tier.
+            console.log(`TTS ok tier=${tier} model=${model} mime=${mime || '-'} ms=${Date.now() - (deadline - chainBudget(env))}`);
             // Sebagian model (mis. 3.8) sudah mengembalikan container WAV: membungkusnya lagi merusak audio.
             if (/wav/i.test(mime) || isWavContainer(bytes)) {
                 return { bytes, contentType: 'audio/wav', provider: 'gemini', model };
@@ -301,6 +303,8 @@ export async function synthesizeGemini(env, { text, voiceName, emotion, tier }) 
         } catch (e) {
             if (e && e.status) statuses.push(e.status);
             errors.push(`${model}: ${(e && e.message) || e}`);
+            // Terlihat di log server: memudahkan tahu model mana yang gagal lalu di-fallback.
+            console.warn(`TTS gagal tier=${tier} model=${model}: ${(e && e.message) || e}`);
         }
     }
 
