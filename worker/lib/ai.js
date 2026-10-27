@@ -114,12 +114,23 @@ async function callGemini(env, model, frames, prompt) {
     }).filter(Boolean);
     parts.push({ text: prompt });
 
+    // Model Gemini 3.x non-lite memakai "thinking" yang menghabiskan jatah token
+    // sebelum menulis jawaban -> JSON terpotong (finish=MAX_TOKENS). Matikan thinking
+    // via thinkingBudget=0 agar token tersedia untuk output. Model *-lite tidak mendukung
+    // thinkingConfig (menolak 400), jadi hanya sisipkan untuk model non-lite.
+    const generationConfig = {
+        responseMimeType: 'application/json',
+        maxOutputTokens: 2048,
+        temperature: 0.8,
+    };
+    if (!/lite/i.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+
     const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             contents: [{ role: 'user', parts }],
-            generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 700, temperature: 0.8 },
+            generationConfig,
         }),
         signal: AbortSignal.timeout(AI_TIMEOUT_MS),
     });
