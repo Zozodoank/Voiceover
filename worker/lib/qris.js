@@ -38,7 +38,7 @@ export async function markOrderPaid(kv, order) {
 export function parseAmountsFromBody(body) {
     const rawText = String(body.notification_text || body.amount || '');
     const digitsOnly = rawText.replace(/\./g, '');
-    const matches = digitsOnly.match(/\d{3,7}/g) || [];
+    const matches = digitsOnly.match(/\d{3,9}/g) || [];
     const parsedAmounts = matches.map(m => parseInt(m, 10));
     return { rawText, parsedAmounts };
 }

@@ -6,7 +6,8 @@ import { generateUniqueTwoDigits, saveOrder, getOrder } from '../lib/qris.js';
 
 const router = new Hono();
 
-const BASE_AMOUNTS = [1200, 1500, 1800]; // sesuai data-price di UI
+const MIN_TOPUP = 1000;      // nominal deposit minimum (Rupiah)
+const MAX_TOPUP = 10000000;  // nominal deposit maksimum (Rupiah)
 
 /**
  * POST /api/payment/create-qris {baseAmount, modelLabel}
@@ -15,8 +16,13 @@ const BASE_AMOUNTS = [1200, 1500, 1800]; // sesuai data-price di UI
 router.post('/payment/create-qris', requireAuth, async (c) => {
     const session = c.get('session');
     const body = await c.req.json().catch(() => ({}));
-    const baseAmount = BASE_AMOUNTS.includes(Number(body.baseAmount)) ? Number(body.baseAmount) : 1200;
-    const modelLabel = String(body.modelLabel || 'Model Studio');
+    // Nominal deposit CUSTOM: bulatkan ke rupiah lalu batasi ke rentang wajar.
+    const requested = Math.round(Number(body.baseAmount));
+    if (!Number.isFinite(requested) || requested < MIN_TOPUP || requested > MAX_TOPUP) {
+        return c.json({ error: `Nominal deposit tidak valid (Rp ${MIN_TOPUP.toLocaleString('id-ID')} - Rp ${MAX_TOPUP.toLocaleString('id-ID')})` }, 400);
+    }
+    const baseAmount = requested;
+    const modelLabel = String(body.modelLabel || 'Deposit Saldo');
 
     const unique2Digit = await generateUniqueTwoDigits(c.env.ORDERS);
     const order = {

@@ -2,25 +2,50 @@
 // lewat polling GET /api/payment/status/:orderId (webhook MacroDroid mengupdate D1 server-side).
 let qrisPollTimer = null;
 
-function openTopUpQrisModal() {
-    const selectedModelRadio = document.querySelector('input[name="ttsModel"]:checked');
-    const basePrice = parseInt(selectedModelRadio.getAttribute('data-price'), 10) || 1200;
-    const modelName = selectedModelRadio.parentElement.querySelector('.text-xs.font-bold').innerText;
+function openTopUpQrisModal(presetAmount) {
+    activeOrder = null;
+    stopQrisPolling();
+
+    const input = document.getElementById('qrisDepositInput');
+    if (input) {
+        const preset = Math.round(Number(presetAmount));
+        if (Number.isFinite(preset) && preset > 0) input.value = String(preset);
+        else if (!input.value) input.value = '50000';
+    }
+    document.getElementById('qrisBasePriceLabel').innerText = 'Rp 0';
+    document.getElementById('qrisUniqueCodeLabel').innerText = '+ Rp 0';
+    document.getElementById('qrisTotalAmountDisplay').innerText = 'Rp 0';
+    document.getElementById('qrisPollingStatusText').innerText = 'Masukkan nominal lalu tekan "Buat QRIS".';
+    document.getElementById('qrisPaymentModal').classList.remove('hidden');
+    if (input) input.focus();
+}
+
+// Nominal deposit CUSTOM -> Worker menambahkan kode unik 2 digit sebagai validator pembayaran.
+function createCustomQrisOrder() {
+    const input = document.getElementById('qrisDepositInput');
+    const amount = Math.round(Number(input && input.value));
+    if (!Number.isFinite(amount) || amount < 1000) {
+        showToast('Nominal deposit minimal Rp 1.000.', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('qrisCreateBtn');
+    if (btn) btn.disabled = true;
 
     apiFetch('/api/payment/create-qris', {
         method: 'POST',
-        body: { baseAmount: basePrice, modelLabel: modelName }
+        body: { baseAmount: amount, modelLabel: 'Deposit Saldo' }
     }).then(data => {
         activeOrder = data;
-        document.getElementById('qrisModelLabel').innerText = data.modelLabel;
         document.getElementById('qrisBasePriceLabel').innerText = `Rp ${data.baseAmount.toLocaleString('id-ID')}`;
         document.getElementById('qrisUniqueCodeLabel').innerText = `+ Rp ${data.unique2Digit}`;
         document.getElementById('qrisTotalAmountDisplay').innerText = `Rp ${data.totalAmount.toLocaleString('id-ID')}`;
-        document.getElementById('qrisPollingStatusText').innerText = "Menunggu webhook MacroDroid...";
-        document.getElementById('qrisPaymentModal').classList.remove('hidden');
+        document.getElementById('qrisPollingStatusText').innerText = 'Menunggu webhook MacroDroid...';
         startQrisPolling();
     }).catch(err => {
         if (!err.handled) showToast('Gagal membuat pembayaran: ' + err.message, 'error');
+    }).finally(() => {
+        if (btn) btn.disabled = false;
     });
 }
 

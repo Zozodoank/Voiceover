@@ -39,7 +39,7 @@ async function initiateCommercialGeneration() {
     // Gerbang saldo hanya cermin UI - Worker tetap memvalidasi & mendebit dari D1
     if (!userUnlimited && userBalance < modelPrice) {
         showToast(`Saldo Anda tidak cukup (Rp ${userBalance.toLocaleString('id-ID')}). Harap Top Up QRIS minimal Rp ${modelPrice.toLocaleString('id-ID')}.`, 'error');
-        openTopUpQrisModal();
+        openTopUpQrisModal(modelPrice);
         return;
     }
 
@@ -96,7 +96,7 @@ async function initiateCommercialGeneration() {
         if (err.status === 402) {
             const d = err.data || {};
             showToast(`Saldo tidak cukup di server (Rp ${(d.have || 0).toLocaleString('id-ID')}). Top up QRIS dulu ya.`, 'error');
-            openTopUpQrisModal();
+            openTopUpQrisModal(modelPrice);
         } else if (err.status === 502) {
             showToast('Server AI gagal memproses (Gemini & AIVene). Coba lagi sebentar.', 'error');
         } else {
