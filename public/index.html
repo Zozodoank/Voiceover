@@ -75,17 +75,17 @@
             <h2 class="text-lg sm:text-xl font-extrabold">Harga Transparan Per Generasi</h2>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl mx-auto">
                 <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800">
-                    <p class="text-[11px] font-bold text-slate-400 uppercase">Flash 3.1</p>
-                    <p class="text-2xl font-black text-emerald-400">Rp 1.200<span class="text-xs font-medium text-slate-500">/VO</span></p>
+                    <p class="text-[11px] font-bold text-slate-400 uppercase">Normal</p>
+                    <p class="text-2xl font-black text-emerald-400" id="landingPrice-tier-normal">Rp 1.200<span class="text-xs font-medium text-slate-500">/VO</span></p>
                 </div>
                 <div class="p-4 rounded-2xl bg-slate-900 border border-brand-500/50 relative">
                     <span class="absolute -top-2 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-brand-600 rounded-full text-[9px] font-extrabold">TERPOPULER</span>
-                    <p class="text-[11px] font-bold text-slate-400 uppercase">Flash 3.7</p>
-                    <p class="text-2xl font-black text-emerald-400">Rp 1.500<span class="text-xs font-medium text-slate-500">/VO</span></p>
+                    <p class="text-[11px] font-bold text-slate-400 uppercase">Sedang</p>
+                    <p class="text-2xl font-black text-emerald-400" id="landingPrice-tier-sedang">Rp 1.500<span class="text-xs font-medium text-slate-500">/VO</span></p>
                 </div>
                 <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800">
-                    <p class="text-[11px] font-bold text-slate-400 uppercase">Flash 3.8</p>
-                    <p class="text-2xl font-black text-emerald-400">Rp 1.800<span class="text-xs font-medium text-slate-500">/VO</span></p>
+                    <p class="text-[11px] font-bold text-slate-400 uppercase">Tinggi</p>
+                    <p class="text-2xl font-black text-emerald-400" id="landingPrice-tier-tinggi">Rp 1.800<span class="text-xs font-medium text-slate-500">/VO</span></p>
                 </div>
             </div>
             <p class="text-[11px] text-slate-500">Riwayat proyek tersimpan privat per akun Google Anda &mdash; multi-tenant di perangkat ini.</p>
@@ -174,7 +174,23 @@
             if (hint) hint.remove();
         }
 
+        // Harga mengikuti pengaturan admin (/api/pricing). Gagal = pakai angka statis di atas.
+        async function loadLandingPrices() {
+            try {
+                const r = await fetch('/api/pricing', { credentials: 'same-origin' });
+                if (!r.ok) return;
+                const data = await r.json();
+                (data.tiers || []).forEach((t) => {
+                    const el = document.getElementById('landingPrice-' + t.id);
+                    if (!el) return;
+                    el.innerHTML = 'Rp ' + Number(t.price).toLocaleString('id-ID')
+                        + '<span class="text-xs font-medium text-slate-500">/VO</span>';
+                });
+            } catch (e) { /* biarkan harga statis */ }
+        }
+
         window.addEventListener('load', async () => {
+            loadLandingPrices();
             const loggedIn = await checkSession();
             if (!loggedIn) initGoogleLogin();
         });

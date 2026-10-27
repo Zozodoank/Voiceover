@@ -86,8 +86,7 @@ async function initiateCommercialGeneration() {
                 gender,
                 voiceName,
                 platform,
-                modelValue,
-                modelLabel: modelName
+                modelValue
             }
         });
     } catch (err) {
@@ -107,6 +106,7 @@ async function initiateCommercialGeneration() {
 
     setProgress(90, `<i class="fa-solid fa-circle-notch fa-spin"></i> Menyusun timeline adegan...`);
     const r = resp.result;
+    const resolvedModelLabel = resp.modelLabel || modelName; // label dari server (otoritatif)
     const affLink = document.getElementById('affiliateLinkInput').value;
 
     if (!userUnlimited && resp.balance != null) userBalance = Number(resp.balance) || 0;
@@ -127,12 +127,12 @@ async function initiateCommercialGeneration() {
 
     document.getElementById('playMergedBtn').removeAttribute('disabled');
     document.getElementById('exportMergedBtn').removeAttribute('disabled');
-    document.getElementById('activeModelStatusLabel').innerText = `Kualitas: ${modelName} • Emosi Per Adegan`;
+    document.getElementById('activeModelStatusLabel').innerText = `Kualitas: ${resolvedModelLabel} • Emosi Per Adegan`;
 
     const newRecord = {
         productName,
         affiliateLink: affLink,
-        modelLabel: modelName,
+        modelLabel: resolvedModelLabel,
         gender,
         voiceName,
         caption: generatedCaptionText,
@@ -150,10 +150,10 @@ async function initiateCommercialGeneration() {
     // Prerender audio Gemini TTS untuk semua adegan di latar belakang (agar Putar/Unduh WebM langsung sinkron).
     sceneAudios = []; sceneAudiosKey = '';
     if (typeof ensureSceneAudios === 'function') {
-        showToast('Menyiapkan audio tiap adegan (prerender)…', 'info');
-        ensureSceneAudios().then((r) => {
-            const res = r || (window.__lastPrerender || {});
-        }).catch(() => { /* fallback speechSynthesis saat putar */ });
+        showToast('Menyiapkan audio tiap adegan…', 'info');
+        ensureSceneAudios().then(() => {
+            paintSceneDurations();
+        }).catch(() => { /* audio diulang lagi saat Putar/Unduh ditekan */ });
     }
 }
 
@@ -166,7 +166,7 @@ function renderScenesTimeline(scenes) {
                     <span class="w-5 h-5 rounded-full bg-brand-500/20 text-brand-400 font-bold text-[11px] flex items-center justify-center shrink-0">${idx + 1}</span>
                     <span class="text-[11px] font-bold text-amber-300 px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded-md">${s.emotion}</span>
                 </div>
-                <span class="text-[10px] text-slate-400 font-mono">${s.start}s - ${s.end}s</span>
+                <span class="text-[10px] text-slate-400 font-mono" data-scene-time="${idx}">${s.start}s - ${s.end}s</span>
             </div>
             <div class="flex items-center justify-between gap-2">
                 <p class="text-xs font-semibold text-slate-200 truncate flex-1">${s.text}</p>
@@ -183,4 +183,14 @@ function playSceneAudio(text, emotion) {
     const v = getSelectedVoice();
     const tier = (typeof getSelectedTier === 'function') ? getSelectedTier() : '';
     previewVoice(v.name, null, text, emotion, tier);
+}
+
+/** Tempelkan durasi audio ASLI ke daftar adegan (bukan perkiraan timestamp AI). */
+function paintSceneDurations() {
+    if (typeof buildTimeline !== 'function') return;
+    const tl = (typeof window.getSceneTimeline === 'function') ? window.getSceneTimeline() : buildTimeline();
+    tl.segments.forEach((seg) => {
+        const el = document.querySelector('[data-scene-time="' + seg.index + '"]');
+        if (el) el.innerText = seg.start.toFixed(1) + 's - ' + seg.end.toFixed(1) + 's';
+    });
 }

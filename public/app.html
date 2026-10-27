@@ -278,33 +278,33 @@
                         <label class="block text-xs font-semibold text-slate-300 mb-2">Pilih Kualitas</label>
                         <div class="grid grid-cols-3 gap-2" id="modelSelectorGrid">
                             <label class="cursor-pointer">
-                                <input type="radio" name="ttsModel" value="gemini-tts-flash-3.1" data-price="1200" checked="" class="peer sr-only">
+                                <input type="radio" name="ttsModel" value="tier-normal" data-price="1200" checked="" class="peer sr-only">
                                 <div class="p-2 sm:p-2.5 rounded-xl border border-slate-700 bg-slate-950 peer-checked:border-brand-500 peer-checked:bg-brand-500/10 transition text-center h-full flex flex-col justify-between">
                                     <div>
                                         <div class="text-xs font-bold text-white">Normal</div>
                                         <div class="text-[10px] text-slate-400 mt-0.5">Standar</div>
                                     </div>
-                                    <span class="inline-block mt-1.5 px-1.5 py-0.5 text-[10px] bg-emerald-500/20 text-emerald-300 rounded font-bold">Rp 1.200</span>
+                                    <span class="inline-block mt-1.5 px-1.5 py-0.5 text-[10px] bg-emerald-500/20 text-emerald-300 rounded font-bold" id="priceTag-tier-normal">Rp 1.200</span>
                                 </div>
                             </label>
                             <label class="cursor-pointer">
-                                <input type="radio" name="ttsModel" value="gemini-tts-flash-3.7" data-price="1500" class="peer sr-only">
+                                <input type="radio" name="ttsModel" value="tier-sedang" data-price="1500" class="peer sr-only">
                                 <div class="p-2 sm:p-2.5 rounded-xl border border-slate-700 bg-slate-950 peer-checked:border-brand-500 peer-checked:bg-brand-500/10 transition text-center h-full flex flex-col justify-between">
                                     <div>
                                         <div class="text-xs font-bold text-white">Sedang</div>
                                         <div class="text-[10px] text-slate-400 mt-0.5">Ekspresif</div>
                                     </div>
-                                    <span class="inline-block mt-1.5 px-1.5 py-0.5 text-[10px] bg-brand-500/20 text-brand-300 rounded font-bold">Rp 1.500</span>
+                                    <span class="inline-block mt-1.5 px-1.5 py-0.5 text-[10px] bg-brand-500/20 text-brand-300 rounded font-bold" id="priceTag-tier-sedang">Rp 1.500</span>
                                 </div>
                             </label>
                             <label class="cursor-pointer">
-                                <input type="radio" name="ttsModel" value="gemini-tts-flash-3.8" data-price="1800" class="peer sr-only">
+                                <input type="radio" name="ttsModel" value="tier-tinggi" data-price="1800" class="peer sr-only">
                                 <div class="p-2 sm:p-2.5 rounded-xl border border-slate-700 bg-slate-950 peer-checked:border-brand-500 peer-checked:bg-brand-500/10 transition text-center h-full flex flex-col justify-between">
                                     <div>
                                         <div class="text-xs font-bold text-white">Tinggi</div>
                                         <div class="text-[10px] text-slate-400 mt-0.5">Premium</div>
                                     </div>
-                                    <span class="inline-block mt-1.5 px-1.5 py-0.5 text-[10px] bg-amber-500/25 text-amber-300 rounded font-bold">Rp 1.800</span>
+                                    <span class="inline-block mt-1.5 px-1.5 py-0.5 text-[10px] bg-amber-500/25 text-amber-300 rounded font-bold" id="priceTag-tier-tinggi">Rp 1.800</span>
                                 </div>
                             </label>
                         </div>
@@ -525,6 +525,7 @@
     <script src="js/state.js"></script>
     <script src="js/tenant.js"></script>
     <script src="js/api.js"></script>
+    <script src="js/pricing.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/history.js"></script>
     <script src="js/auth.js"></script>

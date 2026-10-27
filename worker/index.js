@@ -8,6 +8,7 @@ import paymentRoutes from './routes/payment.js';
 import webhookRoutes from './routes/webhook.js';
 import adminRoutes from './routes/admin.js';
 import qrisImageRoutes from './routes/qris-image.js';
+import pricingRoutes from './routes/pricing.js';
 
 const app = new Hono();
 
@@ -20,6 +21,7 @@ app.onError((err, c) => {
 app.route('/api', authRoutes);      // /api/auth/session, /api/me, /api/auth/logout
 app.route('/api', webhookRoutes);   // /api/webhook/macrodroid (autentikasi via secret key)
 app.route('/api', qrisImageRoutes); // /api/qris/image (gambar QRIS billing - publik, tanpa login)
+app.route('/api', pricingRoutes);   // /api/pricing (harga tier kualitas - publik, tanpa login)
 
 // Endpoint butuh login
 app.route('/api', analyzeRoutes);   // /api/analyze

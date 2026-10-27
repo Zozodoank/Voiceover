@@ -70,6 +70,13 @@ function loadHistoryRecord(idx) {
     
     generatedScenesData = item.scenes;
     renderScenesTimeline(generatedScenesData);
+
+    // Naskah berubah -> audio lama tidak berlaku; siapkan ulang agar timestamp memakai durasi asli.
+    sceneAudios = []; sceneAudiosKey = '';
+    if (typeof ensureSceneAudios === 'function') {
+        ensureSceneAudios().then(() => { if (typeof paintSceneDurations === 'function') paintSceneDurations(); })
+            .catch(() => { /* diulang saat Putar/Unduh ditekan */ });
+    }
     
     document.getElementById('playMergedBtn').removeAttribute('disabled');
     document.getElementById('exportMergedBtn').removeAttribute('disabled');

@@ -5,6 +5,7 @@ let userUnlimited = false;
 let currentUser = { name: 'Tamu', email: '' };
 let userBalance = 0;
 let activeOrder = null;
+let tierPricing = {}; // harga tier kualitas dari /api/pricing: { 'tier-normal': 1200, ... }
 let historyRecords = []; // diisi loadHistoryFromStorage() setelah sesi known (riwayat privat per akun)
 
 let uploadedVideoFile = null;

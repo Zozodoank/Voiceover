@@ -3,16 +3,10 @@ import { Hono } from 'hono';
 import { requireAuth } from '../lib/middleware.js';
 import { getUser, tryDeductBalance, countGeneration } from '../lib/db.js';
 import { analyzeVideo } from '../lib/ai.js';
-import { getVoice } from '../lib/tts.js';
+import { getVoice, TTS_TIER_IDS } from '../lib/tts.js';
+import { loadTierPrices, TIER_LABELS } from '../lib/pricing.js';
 
 const router = new Hono();
-
-// Harga per generasi - SINKRON dengan atribut data-price pada radio ttsModel di app.html
-const PRICES = {
-    'gemini-tts-flash-3.1': 1200,
-    'gemini-tts-flash-3.7': 1500,
-    'gemini-tts-flash-3.8': 1800,
-};
 
 const MAX_FRAMES = 16;
 const MAX_FRAME_BYTES = 200 * 1024; // per frame (base64 dataUrl)
@@ -47,7 +41,14 @@ router.post('/analyze', requireAuth, async (c) => {
     const voice = getVoice(voiceName);
     const gender = voice ? voice.gender : (body.gender === 'female' ? 'female' : 'male');
 
-    const price = PRICES[body.modelValue] != null ? PRICES[body.modelValue] : 1200;
+    // Tier kualitas (id netral dari UI) -> harga dari D1 settings, label ditentukan server.
+    if (body.modelValue != null && !TTS_TIER_IDS.includes(body.modelValue)) {
+        return c.json({ error: 'tier_unknown', message: 'Kualitas voice over tidak dikenal.' }, 400);
+    }
+    const tier = body.modelValue || 'tier-normal';
+    const prices = await loadTierPrices(c.env);
+    const price = prices[tier];
+    const modelLabel = TIER_LABELS[tier];
     const unlimited = !!session.unlimited;
 
     // Gerbang credit (superadmin tanpa batas) - debit baru terjadi SETELAH AI sukses
@@ -76,7 +77,7 @@ router.post('/analyze', requireAuth, async (c) => {
 
     if (unlimited) {
         await countGeneration(c.env.VO_DB, session.email);
-        return c.json({ result: analyzed.result, provider: analyzed.provider, balance: null, unlimited: true });
+        return c.json({ result: analyzed.result, provider: analyzed.provider, modelLabel, balance: null, unlimited: true });
     }
 
     const deducted = await tryDeductBalance(c.env.VO_DB, session.email, price);
@@ -86,7 +87,7 @@ router.post('/analyze', requireAuth, async (c) => {
         return c.json({ error: 'insufficient', need: price, have: user ? user.balance : 0 }, 402);
     }
     const user = await getUser(c.env.VO_DB, session.email);
-    return c.json({ result: analyzed.result, provider: analyzed.provider, balance: user.balance, unlimited: false });
+    return c.json({ result: analyzed.result, provider: analyzed.provider, modelLabel, balance: user.balance, unlimited: false });
 });
 
 export default router;

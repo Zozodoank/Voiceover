@@ -1,15 +1,62 @@
-// worker/lib/tts.js - Sintesis suara VO: Gemini TTS (utama) dengan fallback AIVene.
-// Gemini TTS: POST generateContent responseModalities=AUDIO -> PCM (audio/L16) -> dibungkus WAV.
-// AIVene (fallback): gateway kompatibel OpenAI /audio/speech -> byte mp3.
-// Suara memakai voice & gaya energik yang SAMA di semua tier; tier hanya memilih model penalaran
-// (flash vs pro) agar kualitas merata (bukan voice robotik di tier rendah).
+// worker/lib/tts.js - Sintesis suara VO: Gemini TTS (utama) dengan rantai model per tier kualitas.
+// Gemini TTS: POST generateContent responseModalities=AUDIO -> PCM (audio/L16) ATAU container audio/wav
+// siap pakai (mis. model 3.8). AIVene hanya dipakai bila TTS_ALLOW_DEGRADE="true" (default MATI)
+// agar kualitas tidak pernah turun diam-diam ke voice robotik.
 
-const GEMINI_TTS_TIMEOUT_MS = 15000;
+const TTS_TIMEOUT_DEFAULT_MS = 30000;
 const AIVENE_TTS_TIMEOUT_MS = 12000;
+const TTS_RETRY_DELAYS_MS = [800, 1600, 3200];
 
-// Model TTS default (Normal/Sedang). Pro dipakai untuk tier Tinggi. Override lewat env.
-const GEMINI_TTS_MODEL_DEFAULT = 'gemini-2.5-flash-preview-tts';
-const GEMINI_TTS_MODEL_PRO_DEFAULT = 'gemini-2.5-pro-preview-tts';
+// Tier kualitas memakai id NETRAL: nama model tidak boleh muncul di frontend.
+export const TTS_TIER_IDS = ['tier-normal', 'tier-sedang', 'tier-tinggi'];
+
+export const TTS_TIER_META = {
+    'tier-normal': { label: 'Normal', hint: 'Standar' },
+    'tier-sedang': { label: 'Sedang', hint: 'Ekspresif' },
+    'tier-tinggi': { label: 'Tinggi', hint: 'Premium' },
+};
+
+// Normal -> 2.5 Flash TTS, Sedang -> 3.1 Flash TTS, Tinggi -> 3.8 Flash TTS (fallback 3.1).
+const DEFAULT_TIER_MODEL = {
+    'tier-normal': 'gemini-2.5-flash-preview-tts',
+    'tier-sedang': 'gemini-3.1-flash-tts-preview',
+    'tier-tinggi': 'gemini-3.8-flash-tts',
+};
+
+const TIER_MODEL_ENV = {
+    'tier-normal': 'TTS_MODEL_NORMAL',
+    'tier-sedang': 'TTS_MODEL_SEDANG',
+    'tier-tinggi': 'TTS_MODEL_TINGGI',
+};
+
+// Batas teks TTS: cukup untuk satu adegan utuh. Teks lebih panjang DITOLAK, bukan dipotong
+// diam-diam (pemotongan membuat audio lebih pendek dari subtitle = desync).
+export const TTS_MAX_TEXT = 1500;
+
+/** True bila id tier dikenal frontend/worker. */
+export function isKnownTier(tier) {
+    return TTS_TIER_IDS.includes(String(tier || ''));
+}
+
+/** Rantai model untuk satu tier: model utama + fallback (env TTS_FALLBACK_ORDER, pisahkan koma). */
+export function tierModels(env, tier) {
+    const key = TIER_MODEL_ENV[tier];
+    const primary = (key && env && env[key]) || DEFAULT_TIER_MODEL[tier] || DEFAULT_TIER_MODEL['tier-normal'];
+    const extra = String((env && env.TTS_FALLBACK_ORDER) || '')
+        .split(',').map(s => s.trim()).filter(Boolean);
+    return [...new Set([primary, ...extra])];
+}
+
+function ttsTimeout(env) {
+    const n = Number(env && env.TTS_TIMEOUT_MS);
+    return Number.isFinite(n) && n >= 5000 ? n : TTS_TIMEOUT_DEFAULT_MS;
+}
+
+/** Anggaran waktu total satu permintaan TTS (semua model fallback). */
+function chainBudget(env) {
+    const n = Number(env && env.TTS_CHAIN_BUDGET_MS);
+    return Number.isFinite(n) && n >= 5000 ? n : 60000;
+}
 
 // Daftar voice resmi Gemini TTS (subset kurasi + trait/gender perkiraan untuk UI & nada naskah).
 // Override lewat env GEMINI_TTS_VOICES = "Kore,Puck,..." bila katalog Anda beda.
@@ -79,14 +126,45 @@ export function styleForEmotion(emotion) {
 }
 
 /**
- * Instruksi gaya TTS yang SELALU memuat baseline energik (merata di semua tier/model)
- * plus nuansa emosi adegan. Dipakai oleh Gemini (systemInstruction) maupun AIVene (instructions).
+ * Instruksi gaya TTS. Mode "natural" (default) meniru penyampaian manusia realistis;
+ * mode "energetic" mempertahankan gaya lama (berteriak) untuk perbandingan.
+ * Dipakai Gemini (systemInstruction / prompt) maupun AIVene (instructions).
  */
-export function buildTtsStyle(emotion) {
+export function buildTtsStyle(emotion, env) {
     const nuance = styleForEmotion(emotion) || 'hangat dan antusias';
-    return 'Kamu pengisi suara video affiliate Indonesia. '
-        + 'Bicaralah dengan ENERGI TINGGI, jelas, hidup, dan meyakinkan sepanjang kalimat; '
-        + 'jangan datar atau kaku. Nada adegan ini: ' + nuance + '.';
+    if (String((env && env.TTS_STYLE_MODE) || 'natural').toLowerCase() === 'energetic') {
+        return 'Kamu pengisi suara video affiliate Indonesia. '
+            + 'Bicaralah dengan ENERGI TINGGI, jelas, hidup, dan meyakinkan sepanjang kalimat; '
+            + 'jangan datar atau kaku. Nada adegan ini: ' + nuance + '.';
+    }
+    return 'Kamu pengisi suara video affiliate Indonesia yang natural dan realistis, '
+        + 'seperti merekomendasikan produk ke teman. Artikulasi jelas, intonasi hidup, tempo wajar, '
+        + 'jeda napas alami; jangan datar dan jangan berteriak. Nada adegan ini: ' + nuance + '.';
+}
+
+/** Gaya yang ditanam di dalam prompt teks (dipakai bila model menolak systemInstruction). */
+export function stylePrompt(text, emotion, env) {
+    return buildTtsStyle(emotion, env) + ' Ucapkan kalimat berikut apa adanya: ' + text;
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/** True bila byte sudah berupa container WAV (RIFF) sehingga tidak boleh dibungkus ulang. */
+function isWavContainer(bytes) {
+    return !!bytes && bytes.byteLength > 12
+        && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46;
+}
+
+// Di-set false sekali bila model menolak field systemInstruction (hindari 400 berulang).
+let _systemInstructionSupported = true;
+
+/** Jeda sebelum percobaan ulang: hormati Retry-After, jika tidak ada pakai backoff terjadwal. */
+function retryDelay(res, attempt) {
+    const ra = Number(res && res.headers && res.headers.get('Retry-After'));
+    if (Number.isFinite(ra) && ra > 0) return Math.min(ra * 1000, 8000);
+    return TTS_RETRY_DELAYS_MS[Math.min(attempt, TTS_RETRY_DELAYS_MS.length - 1)];
 }
 
 /** Tulis string ASCII ke DataView pada offset. */
@@ -136,46 +214,101 @@ function base64ToBytes(b64) {
 }
 
 /**
- * Sintesis via Gemini TTS -> { bytes:Uint8Array (WAV), contentType:'audio/wav', provider:'gemini' }.
- * tier hanya memilih model (flash vs pro); voice & gaya tetap sama.
+ * Satu panggilan Gemini TTS ke satu model. Melempar Error ber-.status untuk HTTP gagal;
+ * 429/503 diulang dengan backoff (menghormati Retry-After).
  */
-export async function synthesizeGemini(env, { text, voiceName, emotion, tier }) {
-    const model = tier === 'gemini-tts-flash-3.8'
-        ? (env.GEMINI_TTS_MODEL_PRO || GEMINI_TTS_MODEL_PRO_DEFAULT)
-        : (env.GEMINI_TTS_MODEL || GEMINI_TTS_MODEL_DEFAULT);
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`;
-
+async function callGeminiTts(env, model, { text, voiceName, emotion }, useSystemInstruction, timeoutMs) {
     const body = {
-        contents: [{ parts: [{ text }] }],
-        systemInstruction: { parts: [{ text: buildTtsStyle(emotion) }] },
+        contents: [{ parts: [{ text: useSystemInstruction ? text : stylePrompt(text, emotion, env) }] }],
         generationConfig: {
             responseModalities: ['AUDIO'],
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
         },
     };
+    if (useSystemInstruction) {
+        body.systemInstruction = { parts: [{ text: buildTtsStyle(emotion, env) }] };
+    }
 
-    const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(GEMINI_TTS_TIMEOUT_MS),
-    });
-    if (!res.ok) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`;
+    let lastErr = null;
+
+    for (let attempt = 0; attempt < TTS_RETRY_DELAYS_MS.length; attempt++) {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(Math.max(1000, Number(timeoutMs) || ttsTimeout(env))),
+        });
+        if (res.ok) return await res.json();
+
         let msg = '';
         try { const j = await res.json(); msg = (j && j.error && j.error.message) || ''; } catch (e) { /* non-json */ }
         const err = new Error(`Gemini TTS HTTP ${res.status}${msg ? ': ' + msg : ''}`);
         err.status = res.status;
-        throw err;
+        if (res.status !== 429 && res.status !== 503) throw err;
+        lastErr = err;
+        if (attempt < TTS_RETRY_DELAYS_MS.length - 1) await sleep(retryDelay(res, attempt));
     }
-    const data = await res.json();
-    const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
-    const audioPart = parts.find(p => p && p.inlineData && p.inlineData.data);
-    if (!audioPart) throw new Error('Gemini TTS tidak mengembalikan audio');
+    throw lastErr;
+}
 
-    const pcm = base64ToBytes(audioPart.inlineData.data);
-    if (!pcm.byteLength) throw new Error('Gemini TTS mengembalikan audio kosong');
-    const { sampleRate, channels } = parsePcmMeta(audioPart.inlineData.mimeType);
-    return { bytes: pcmToWav(pcm, sampleRate, channels), contentType: 'audio/wav', provider: 'gemini' };
+/**
+ * Sintesis via Gemini TTS -> { bytes:Uint8Array, contentType, provider:'gemini', model }.
+ * Mencoba model utama tier lalu fallback-nya. Mendukung dua bentuk respons:
+ * PCM mentah (audio/L16 -> dibungkus WAV) dan container audio/wav (dipakai apa adanya).
+ */
+export async function synthesizeGemini(env, { text, voiceName, emotion, tier }) {
+    const models = tierModels(env, tier);
+    const errors = [];
+    const statuses = [];
+    // Anggaran waktu TOTAL rantai model: tanpa ini, 429 beruntun bisa menahan satu request
+    // beberapa menit (3 model x 3 percobaan x timeout) sebelum gagal.
+    const deadline = Date.now() + chainBudget(env);
+
+    for (const model of models) {
+        const remaining = deadline - Date.now();
+        if (remaining < 2000) {
+            errors.push(`${model}: dilewati (anggaran waktu habis)`);
+            break;
+        }
+        try {
+            let data;
+            if (_systemInstructionSupported) {
+                try {
+                    data = await callGeminiTts(env, model, { text, voiceName, emotion }, true, remaining);
+                } catch (e) {
+                    // Model menolak systemInstruction: matikan permanen untuk proses ini, ulangi tanpa field itu.
+                    if (e && e.status === 400) _systemInstructionSupported = false;
+                    else throw e;
+                }
+            }
+            if (!data) data = await callGeminiTts(env, model, { text, voiceName, emotion }, false, deadline - Date.now());
+
+            const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+            const audioPart = parts.find(p => p && p.inlineData && p.inlineData.data);
+            if (!audioPart) throw new Error('Gemini TTS tidak mengembalikan audio');
+
+            const bytes = base64ToBytes(audioPart.inlineData.data);
+            if (!bytes.byteLength) throw new Error('Gemini TTS mengembalikan audio kosong');
+
+            const mime = String(audioPart.inlineData.mimeType || '');
+            // Sebagian model (mis. 3.8) sudah mengembalikan container WAV: membungkusnya lagi merusak audio.
+            if (/wav/i.test(mime) || isWavContainer(bytes)) {
+                return { bytes, contentType: 'audio/wav', provider: 'gemini', model };
+            }
+            const { sampleRate, channels } = parsePcmMeta(mime);
+            return { bytes: pcmToWav(bytes, sampleRate, channels), contentType: 'audio/wav', provider: 'gemini', model };
+        } catch (e) {
+            if (e && e.status) statuses.push(e.status);
+            errors.push(`${model}: ${(e && e.message) || e}`);
+        }
+    }
+
+    // Rincian model & pesan provider HANYA di log server: nama model tidak boleh bocor ke browser.
+    console.error('Gemini TTS gagal:', errors.join(' | ') || 'tanpa detail');
+    const err = new Error('Gemini TTS gagal membuat suara');
+    err.status = statuses.includes(429) ? 429 : 502;
+    throw err;
 }
 
 /** Sintesis via AIVene (fallback) -> { bytes, contentType:'audio/mpeg', provider:'aivene' }. */
@@ -185,7 +318,7 @@ export async function synthesizeAivene(env, { text, emotion }) {
     const model = env.AIVENE_TTS_MODEL || 'tts-1';
     const voice = env.AIVENE_TTS_VOICE || 'nova'; // voice AIVene tetap (jangan kirim nama Gemini)
 
-    const body = { model, input: text, voice, response_format: 'mp3', speed: 1.0, instructions: buildTtsStyle(emotion) };
+    const body = { model, input: text, voice, response_format: 'mp3', speed: 1.0, instructions: buildTtsStyle(emotion, env) };
 
     const res = await fetch(url, {
         method: 'POST',
@@ -206,8 +339,9 @@ export async function synthesizeAivene(env, { text, emotion }) {
 }
 
 /**
- * Router utama suara VO: coba Gemini TTS lebih dulu; bila gagal dan AIVene tersedia, fallback.
- * Mengembalikan { bytes, contentType, provider } atau melempar Error terakhir (dengan .status).
+ * Router utama suara VO: Gemini TTS lebih dulu (rantai model per tier).
+ * AIVene HANYA dipakai bila TTS_ALLOW_DEGRADE="true" - kualitas tidak boleh turun diam-diam.
+ * Mengembalikan { bytes, contentType, provider, model } atau melempar Error terakhir (dengan .status).
  */
 export async function synthesizeVoice(env, { text, voiceName, emotion, tier }) {
     let lastError = null;
@@ -218,7 +352,8 @@ export async function synthesizeVoice(env, { text, voiceName, emotion, tier }) {
     } else {
         lastError = new Error('GEMINI_API_KEY kosong');
     }
-    if (env.AIVENE_API_KEY) {
+    const degrade = String(env.TTS_ALLOW_DEGRADE || 'false').toLowerCase() === 'true';
+    if (degrade && env.AIVENE_API_KEY) {
         try {
             return await synthesizeAivene(env, { text, emotion });
         } catch (e) { lastError = e; }

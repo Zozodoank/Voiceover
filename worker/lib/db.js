@@ -54,6 +54,20 @@ export async function listUsers(db) {
     return res.results || [];
 }
 
+/** Semua baris settings (key/value): harga tier kualitas & konfigurasi ringan lain. */
+export async function getSettings(db) {
+    const res = await db.prepare('SELECT key, value FROM settings').all();
+    return res.results || [];
+}
+
+/** Upsert satu setting (aman dipanggil berulang; updated_at selalu di-refresh). */
+export async function setSetting(db, key, value) {
+    return await db.prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    ).bind(key, String(value)).run();
+}
+
 export async function usageStats(db) {
     const row = await db.prepare(
         'SELECT COUNT(*) AS total_users, COALESCE(SUM(total_gen),0) AS total_generations, COALESCE(SUM(balance),0) AS total_balance FROM users'

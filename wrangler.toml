@@ -30,13 +30,17 @@ GEMINI_MODEL = "gemini-3.5-flash"
 GEMINI_MODELS = "gemini-3.5-flash, gemini-3.1-flash-lite, gemini-3.5-flash-lite"   # rantai fallback sebelum AIVene (hemat free tier; 2.5-flash sudah 404)
 AIVENE_MODEL = "qwen3.8-flash"
 AIVENE_BASE_URL = "https://api.aivene.com/v1"
-# --- TTS: Gemini utama, AIVene fallback ---
-TTS_PROVIDER_PRIMARY = "gemini"                       # provider suara VO utama (fallback otomatis ke AIVene)
-GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts"     # tier Normal/Sedang (voice & energi sama)
-GEMINI_TTS_MODEL_PRO = "gemini-2.5-pro-preview-tts"   # tier Tinggi: penalaran model lebih baik (voice tetap sama)
+# --- TTS: satu model per tier kualitas (frontend hanya memakai id tier netral) ---
+TTS_MODEL_NORMAL = "gemini-2.5-flash-preview-tts"     # tier Normal
+TTS_MODEL_SEDANG = "gemini-3.1-flash-tts-preview"     # tier Sedang
+TTS_MODEL_TINGGI = "gemini-3.8-flash-tts"             # tier Tinggi (utama)
+TTS_FALLBACK_ORDER = "gemini-3.1-flash-tts-preview,gemini-2.5-flash-preview-tts"  # fallback bila model tier gagal/429
+TTS_STYLE_MODE = "natural"                            # natural = penyampaian realistis; energetic = gaya lama (berteriak)
+TTS_TIMEOUT_MS = "30000"                              # batas satu panggilan TTS (model 3.x lebih lambat)
+TTS_ALLOW_DEGRADE = "false"                           # true = izinkan fallback AIVene (kualitas lebih rendah)
 GEMINI_TTS_VOICES = ""                                # kosong = daftar voice resmi bawaan; atau nama dipisah koma
-AIVENE_TTS_MODEL = "tts-1"                            # model TTS fallback (via AIVene /audio/speech)
-AIVENE_TTS_VOICE = "nova"                             # voice AIVene tetap untuk fallback (jangan kirim voice Gemini)
+AIVENE_TTS_MODEL = "tts-1"                            # hanya dipakai bila TTS_ALLOW_DEGRADE=true
+AIVENE_TTS_VOICE = "nova"                              # voice AIVene tetap untuk fallback (jangan kirim voice Gemini)
 AIVENE_TTS_VOICES = ""                                # (legacy) kosong = voice default Gemini
 GEMINI_FALLBACK_ENABLED = "true"
 

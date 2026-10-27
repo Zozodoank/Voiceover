@@ -10,5 +10,6 @@ window.onload = async function () {
     loadHistoryFromStorage();
     applySessionToHeader();
     updateHistoryBadge();
+    await loadTierPricing(); // harga tier dari pengaturan admin (gagal = pakai nilai statis HTML)
     renderVoicePicker();
 };

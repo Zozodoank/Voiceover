@@ -1,8 +1,11 @@
-// worker/routes/admin.js - Dasbor superadmin: statistik, daftar user, koreksi manual credit
+// worker/routes/admin.js - Dasbor superadmin: statistik, daftar user, koreksi manual credit,
+// gambar QRIS (KV), dan harga tiap tier kualitas VO (D1 settings).
 import { Hono } from 'hono';
 import { requireAuth, requireSuperadmin } from '../lib/middleware.js';
-import { usageStats, listUsers, getUser, addBalance } from '../lib/db.js';
+import { usageStats, listUsers, getUser, addBalance, setSetting } from '../lib/db.js';
 import { QRIS_IMG_KEY } from './qris-image.js';
+import { TTS_TIER_IDS } from '../lib/tts.js';
+import { DEFAULT_TIER_PRICES, loadTierPrices, sanitizePrice, settingKey, tierList } from '../lib/pricing.js';
 
 const router = new Hono();
 
@@ -76,6 +79,36 @@ router.post('/admin/qris-image', async (c) => {
 router.delete('/admin/qris-image', async (c) => {
     await c.env.ORDERS.delete(QRIS_IMG_KEY);
     return c.json({ ok: true });
+});
+
+/** GET /api/admin/pricing - harga tier kualitas yang aktif + nilai default. */
+router.get('/admin/pricing', async (c) => {
+    const prices = await loadTierPrices(c.env);
+    return c.json({ tiers: tierList(prices), defaults: DEFAULT_TIER_PRICES });
+});
+
+/**
+ * PUT /api/admin/pricing {tiers:{"tier-normal":1200,...}} - simpan harga per tier.
+ * Tier yang tidak dikirim dibiarkan seperti sekarang; nilai di luar batas ditolak (400).
+ */
+router.put('/admin/pricing', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const input = (body && body.tiers) || null;
+    if (!input || typeof input !== 'object') {
+        return c.json({ error: 'Body wajib berupa { tiers: { ... } }' }, 400);
+    }
+    const current = await loadTierPrices(c.env);
+    const saved = { ...current };
+    for (const tier of TTS_TIER_IDS) {
+        if (!(tier in input)) continue;
+        const price = sanitizePrice(input[tier], NaN);
+        if (!Number.isFinite(price)) {
+            return c.json({ error: `Harga ${tier} tidak valid (100 - 2.000.000)` }, 400);
+        }
+        await setSetting(c.env.VO_DB, settingKey(tier), price);
+        saved[tier] = price;
+    }
+    return c.json({ ok: true, tiers: tierList(saved) });
 });
 
 export default router;
