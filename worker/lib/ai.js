@@ -3,7 +3,8 @@
 
 import { ALLOWED_EMOTIONS } from './tts.js';
 
-const AI_TIMEOUT_MS = 20000;
+const AI_TIMEOUT_MS = 30000;      // per panggilan model (model *-lite bisa lambat utk banyak frame)
+const AI_TOTAL_BUDGET_MS = 50000; // anggaran total lintas provider agar request tidak menggantung
 
 /** Aturan CTA per platform tujuan - menentukan frasa keranjang yang boleh/tidak boleh. */
 const PLATFORM_CTA = {
@@ -106,7 +107,7 @@ export function normalizeResult(raw, duration) {
 }
 
 /** Panggil Gemini generateContent dengan frame sebagai inlineData. Lempar jika HTTP bukan 2xx. */
-async function callGemini(env, model, frames, prompt) {
+async function callGemini(env, model, frames, prompt, timeoutMs) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`;
     const parts = frames.map(f => {
         const parsed = splitDataUrl(f);
@@ -132,7 +133,7 @@ async function callGemini(env, model, frames, prompt) {
             contents: [{ role: 'user', parts }],
             generationConfig,
         }),
-        signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs || AI_TIMEOUT_MS),
     });
     if (!res.ok) {
         const err = new Error(`Gemini HTTP ${res.status}`);
@@ -145,7 +146,7 @@ async function callGemini(env, model, frames, prompt) {
 }
 
 /** Fallback: AIVene endpoint OpenAI-compatible (model qwen3.8-flash) dengan image_url base64. */
-async function callAivene(env, frames, prompt) {
+async function callAivene(env, frames, prompt, timeoutMs) {
     const base = String(env.AIVENE_BASE_URL || 'https://aivene.com/v1beta').replace(/\/$/, '');
     const url = base.endsWith('/chat/completions') ? base : `${base}/chat/completions`;
     const content = frames.map(f => ({ type: 'image_url', image_url: { url: f } }));
@@ -160,7 +161,7 @@ async function callAivene(env, frames, prompt) {
             temperature: 0.8,
             max_tokens: 700,
         }),
-        signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs || AI_TIMEOUT_MS),
     });
     if (!res.ok) {
         const err = new Error(`AIVene HTTP ${res.status}`);
@@ -183,31 +184,35 @@ export async function analyzeVideo(env, { frames, productName, affiliateLink, du
     const fallbackEnabled = String(env.GEMINI_FALLBACK_ENABLED ?? 'true') !== 'false';
     const models = String(env.GEMINI_MODELS || env.GEMINI_MODEL || 'gemini-3.5-flash')
         .split(',').map(s => s.trim()).filter(Boolean);
-    let lastError = null;
+    const errors = [];
+    const deadline = Date.now() + AI_TOTAL_BUDGET_MS;
+    const remaining = () => deadline - Date.now();
 
     if (env.GEMINI_API_KEY) {
         for (const model of models) {
+            if (remaining() < 3000) { errors.push(`${model}: dilewati (waktu habis)`); break; }
             try {
-                const raw = await callGemini(env, model, frames, prompt);
+                const raw = await callGemini(env, model, frames, prompt, Math.min(AI_TIMEOUT_MS, remaining()));
                 const result = normalizeResult(raw, duration);
                 if (result) return { result, provider: 'gemini:' + model };
-                lastError = new Error(`Respons ${model} tidak dapat diparse jadi JSON valid`);
+                errors.push(`${model}: JSON tidak valid`);
             } catch (e) {
-                lastError = e; // 429/5xx/timeout -> coba model Gemini berikutnya
+                errors.push(`${model}: ${e.message}`); // 429/503/timeout -> coba model berikutnya
             }
         }
     } else {
-        lastError = new Error('GEMINI_API_KEY kosong');
+        errors.push('GEMINI_API_KEY kosong');
     }
 
-    if (fallbackEnabled && env.AIVENE_API_KEY) {
+    if (fallbackEnabled && env.AIVENE_API_KEY && remaining() > 3000) {
         try {
-            const raw = await callAivene(env, frames, prompt);
+            const raw = await callAivene(env, frames, prompt, Math.min(AI_TIMEOUT_MS, remaining()));
             const result = normalizeResult(raw, duration);
             if (result) return { result, provider: 'aivene' };
+            errors.push('aivene: JSON tidak valid');
         } catch (e) {
-            lastError = e; // seluruh Gemini + AIVene gagal -> lempar
+            errors.push(`aivene: ${e.message}`); // seluruh provider gagal -> lempar
         }
     }
-    throw lastError || new Error('Analisa AI gagal');
+    throw new Error(errors.join(' | ') || 'Analisa AI gagal');
 }

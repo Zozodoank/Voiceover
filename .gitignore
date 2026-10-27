@@ -3,7 +3,8 @@ node_modules/
 .env.*
 .dev.vars
 dev.vars
-qris_megakomindo_verifier.macro
+*.macro
+*.mdr
 .wrangler/
 *.log
 uploads/

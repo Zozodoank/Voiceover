@@ -61,7 +61,7 @@ async function initiateCommercialGeneration() {
     let duration = parseFloat(document.getElementById('videoDurationBadge').innerText) || 15;
     try {
         if (uploadedVideoFile) {
-            const frames = await extractFrames(uploadedVideoFile, { fps: 1, maxFrames: 8, width: 384, quality: 0.7 });
+            const frames = await extractFrames(uploadedVideoFile, { fps: 1, maxFrames: 6, width: 320, quality: 0.65 });
             frameDataUrls = frames.map(f => f.dataUrl);
         } else {
             throw new Error('Belum ada video dimuat. Upload video produk terlebih dahulu.');
