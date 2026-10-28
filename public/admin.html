@@ -73,6 +73,24 @@
             </div>
         </section>
 
+        <!-- Payload QRIS statis -> QRIS dinamis (nominal terkunci) -->
+        <section class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+            <h2 class="text-sm font-bold"><i class="fa-solid fa-money-check-dollar text-emerald-400 mr-1"></i> QRIS Dinamis (Payload Statis Merchant)</h2>
+            <p class="text-[11px] text-slate-400">Tempel string QRIS statis merchant (scan <code>QRS.jpg</code> dengan Google Lens / decoder QR), diawali <code>000201010211...</code> dan diakhiri <code>6304XXXX</code>. Worker mengubahnya menjadi QRIS dinamis per order sehingga nominal <strong>otomatis terkunci</strong> di aplikasi pembayar. Hapus untuk kembali ke alur gambar statis + kode 2 digit manual.</p>
+            <textarea id="qrisStaticInput" rows="5" spellcheck="false" placeholder="00020101021126...6304ABCD" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 font-mono text-[11px] text-slate-200 focus:border-emerald-500 outline-none break-all"></textarea>
+            <div class="flex flex-wrap gap-2">
+                <button id="qrisStaticSaveBtn" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold transition disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-check mr-1"></i>Validasi &amp; Simpan</button>
+                <button id="qrisStaticPreviewBtn" class="px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-xs font-bold transition"><i class="fa-solid fa-eye mr-1"></i>Pratinjau Rp 1.000</button>
+                <button id="qrisStaticDeleteBtn" class="px-3 py-1.5 rounded-xl bg-rose-600/80 hover:bg-rose-500 text-xs font-bold transition"><i class="fa-solid fa-trash mr-1"></i>Hapus</button>
+            </div>
+            <div class="flex items-start gap-4">
+                <div class="w-28 h-28 rounded-lg border border-slate-700 bg-white p-1 flex items-center justify-center shrink-0 overflow-hidden">
+                    <img id="qrisStaticPreview" alt="Pratinjau QRIS dinamis" class="max-w-full max-h-full object-contain">
+                </div>
+                <p id="qrisStaticResult" class="flex-1 text-[11px] text-slate-500 whitespace-pre-line break-all"></p>
+            </div>
+        </section>
+
         <!-- Harga tier kualitas (D1 settings) -->
         <section class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
             <h2 class="text-sm font-bold"><i class="fa-solid fa-tags text-amber-400 mr-1"></i> Harga Kualitas Voice Over</h2>
@@ -147,6 +165,7 @@
             }
             document.getElementById('adminEmailLabel').textContent = me.email;
             loadQrisStatus();
+            loadQrisStatic();
             loadPricingForm();
 
             const [stats, users] = await Promise.all([
@@ -254,6 +273,81 @@
                 qrisOut.textContent = r.ok ? 'Dihapus - kini memakai bawaan QRS.jpg.' : 'Gagal: ' + (d.error || r.status);
                 qrisPreview.src = '/api/qris/image?t=' + Date.now();
             } catch (e) { qrisOut.textContent = 'Gagal menghubungi server.'; }
+        });
+
+        // ===== Payload QRIS statis -> QRIS dinamis =====
+        const qrisStaticInput = document.getElementById('qrisStaticInput');
+        const qrisStaticOut = document.getElementById('qrisStaticResult');
+        const qrisStaticPreview = document.getElementById('qrisStaticPreview');
+        const qrisStaticSave = document.getElementById('qrisStaticSaveBtn');
+
+        function describeQrisStatic(st) {
+            if (!st || (!st.configured && !st.source)) {
+                return 'Belum diatur - billing memakai gambar QRIS statis + kode 2 digit manual.';
+            }
+            const lines = [];
+            lines.push(`Sumber: ${st.source === 'kv' ? 'KV (dasbor)' : (st.source === 'env' ? 'variabel env' : 'tidak diketahui')}`);
+            if (st.merchantName) lines.push(`Merchant: ${st.merchantName}${st.merchantCity ? ' - ' + st.merchantCity : ''}`);
+            if (st.nmid) lines.push(`NMID: ${st.nmid}`);
+            lines.push(`CRC: ${st.crcOk ? 'OK' : 'TIDAK VALID'}`);
+            if (!st.valid && st.error) lines.push(`Masalah: ${st.error}`);
+            if (st.masked) lines.push(`Payload: ${st.masked}`);
+            if (st.updatedAt) {
+                const when = new Date(Number(st.updatedAt)).toLocaleString('id-ID');
+                lines.push(`Diperbarui: ${when}${st.updatedBy ? ' oleh ' + st.updatedBy : ''}`);
+            }
+            return lines.join('\n');
+        }
+
+        async function loadQrisStatic() {
+            try {
+                const st = await fetch('/api/admin/qris-static', { credentials: 'same-origin' }).then(r => r.json());
+                qrisStaticOut.textContent = describeQrisStatic(st);
+                // Payload valid -> langsung tampilkan pratinjau Rp 1.000 untuk di-scan admin.
+                if (st && st.valid) previewQrisStatic();
+            } catch (e) { /* non-superadmin / jaringan */ }
+        }
+
+        function previewQrisStatic() {
+            qrisStaticPreview.src = '/api/admin/qris-static/preview?amount=1000&t=' + Date.now();
+        }
+
+        qrisStaticSave.addEventListener('click', async () => {
+            const payload = qrisStaticInput.value.trim();
+            if (!payload) { qrisStaticOut.textContent = 'Tempel payload QRIS statis terlebih dahulu.'; return; }
+            qrisStaticSave.disabled = true;
+            qrisStaticOut.textContent = 'Memvalidasi payload...';
+            try {
+                const r = await fetch('/api/admin/qris-static', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+                    body: JSON.stringify({ payload })
+                });
+                const d = await r.json();
+                if (r.ok) {
+                    qrisStaticOut.textContent = describeQrisStatic(d);
+                    qrisStaticInput.value = '';
+                    previewQrisStatic();
+                } else {
+                    qrisStaticOut.textContent = `Gagal (${d.reason || r.status}): ${d.error || 'payload tidak valid'}`;
+                }
+            } catch (e) { qrisStaticOut.textContent = 'Gagal menghubungi server.'; }
+            qrisStaticSave.disabled = false;
+        });
+
+        document.getElementById('qrisStaticPreviewBtn').addEventListener('click', () => {
+            previewQrisStatic();
+            qrisStaticOut.textContent = (qrisStaticOut.textContent || '') + '\nPratinjau dimuat: scan gambar Rp 1.000 dengan aplikasi e-wallet untuk memastikan nominal terkunci.';
+        });
+
+        document.getElementById('qrisStaticDeleteBtn').addEventListener('click', async () => {
+            if (!confirm('Hapus payload QRIS statis dari KV? Billing kembali memakai gambar QRIS statis + kode 2 digit manual.')) return;
+            qrisStaticOut.textContent = 'Menghapus...';
+            try {
+                const r = await fetch('/api/admin/qris-static', { method: 'DELETE', credentials: 'same-origin' });
+                const d = await r.json();
+                qrisStaticOut.textContent = describeQrisStatic(d);
+                qrisStaticPreview.removeAttribute('src');
+            } catch (e) { qrisStaticOut.textContent = 'Gagal menghubungi server.'; }
         });
 
         // ===== Harga tier kualitas (D1 settings) =====

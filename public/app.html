@@ -120,10 +120,18 @@
                 </div>
                 <button onclick="closeQrisModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
             </div>
-            <!-- QRIS resmi: satu gambar saja (/api/qris/image). Fallback dummy hanya bila gambar gagal dimuat. -->
-            <div class="bg-white rounded-2xl p-3 shadow-xl">
-                <img id="qrisImageDisplay" src="/api/qris/image"
-                    onerror="this.style.display='none'; var f=document.getElementById('qrisFallbackSvg'); if(f){f.classList.remove('hidden'); f.classList.add('flex');}"
+            <!-- Langkah 1: QRIS sengaja belum ditampilkan. Gambar baru dimuat setelah user
+                 mengisi nominal dan menekan Bayar (lihat setQrisStep di payment.js). -->
+            <div id="qrisQrPlaceholder" class="hidden flex flex-col items-center justify-center gap-2 h-56 rounded-2xl border-2 border-dashed border-slate-700 bg-slate-950 text-center px-4">
+                <i class="fa-solid fa-qrcode text-4xl text-slate-600"></i>
+                <p class="text-[11px] font-bold text-slate-300">QRIS muncul setelah kamu menekan <span class="text-emerald-400">Bayar</span></p>
+                <p class="text-[10px] text-slate-500">Isi nominal deposit dulu - 2 digit kode verifikasi ditambahkan otomatis.</p>
+            </div>
+
+            <!-- Langkah 2: QRIS dinamis (/api/payment/qr/:orderId) atau QRIS statis sebagai fallback -->
+            <div id="qrisQrPanel" class="hidden bg-white rounded-2xl p-3 shadow-xl">
+                <img id="qrisImageDisplay"
+                    onerror="onQrisImageError()"
                     alt="QRIS MEGAKOMINDO" class="w-full max-h-72 object-contain rounded-lg mx-auto">
                 <div id="qrisFallbackSvg" class="hidden w-full h-56 flex-col items-center justify-center bg-slate-50 p-2">
                     <i class="fa-solid fa-qrcode text-7xl text-slate-900"></i>
@@ -131,37 +139,48 @@
                 </div>
             </div>
 
+            <!-- Status QRIS dinamis: nominal terkunci + hitung mundur masa berlaku -->
+            <div id="qrisDynamicBadge" class="hidden flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+                <span class="text-[11px] font-bold text-emerald-300"><i class="fa-solid fa-lock mr-1"></i>Nominal terkunci otomatis di QRIS</span>
+                <span id="qrisCountdown" class="hidden text-[11px] font-mono font-bold text-amber-300">Sisa waktu 30:00</span>
+            </div>
+
             <!-- Nominal deposit CUSTOM; kode unik 2 digit muncul di bawahnya setelah order dibuat -->
             <div class="p-3.5 rounded-2xl bg-slate-950 border border-amber-500/40 space-y-2">
                 <label for="qrisDepositInput" class="block text-xs font-bold text-slate-300">Nominal Deposit (Rp)</label>
                 <div class="flex gap-2">
-                    <input id="qrisDepositInput" type="number" min="1000" step="1000" inputmode="numeric" placeholder="Contoh: 50000"
+                    <input id="qrisDepositInput" type="number" min="1000" max="10000000" step="100" inputmode="numeric"
+                        placeholder="Contoh: 50000" oninput="onQrisAmountInput()"
                         class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none">
                     <button id="qrisCreateBtn" onclick="createCustomQrisOrder()"
                         class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold whitespace-nowrap">
-                        <i class="fa-solid fa-bolt"></i> Buat QRIS
+                        <i class="fa-solid fa-lock"></i> <span id="qrisCreateBtnText">Bayar</span>
                     </button>
                 </div>
+                <p id="qrisAmountError" class="hidden text-[11px] text-rose-400"></p>
+                <p id="qrisAmountHint" class="hidden text-[11px] text-amber-300"></p>
                 <div class="flex items-center justify-between text-xs text-slate-400">
                     <span>Nominal Deposit:</span>
                     <span id="qrisBasePriceLabel" class="font-medium text-slate-200">Rp 0</span>
                 </div>
                 <div class="flex items-center justify-between text-xs text-slate-400">
                     <span>Kode Unik Verifikasi:</span>
-                    <span id="qrisUniqueCodeLabel" class="font-mono font-bold text-amber-400">+ Rp 0</span>
+                    <span id="qrisUniqueCodeLabel" class="font-mono font-bold text-amber-400">otomatis</span>
                 </div>
-                <div class="border-t border-slate-800 pt-2 flex items-center justify-between">
+                <div class="flex items-center justify-between">
                     <span class="text-xs font-bold uppercase text-white">Total Transfer:</span>
                     <div class="flex items-center gap-2">
-                        <span id="qrisTotalAmountDisplay" class="text-lg font-black text-emerald-400 font-mono">Rp 0</span>
+                        <span id="qrisTotalAmountDisplay" class="text-lg font-black text-emerald-400 font-mono">&mdash;</span>
                         <button onclick="copyExactNominal()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-200 border border-slate-700">
                             <i class="fa-regular fa-copy"></i>
                         </button>
+                        <button id="qrisDownloadBtn" onclick="downloadQrisSvg()" class="hidden px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-200 border border-slate-700" title="Unduh QRIS">
+                            <i class="fa-solid fa-download"></i>
+                        </button>
                     </div>
                 </div>
-                <p class="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2 leading-relaxed">
-                    <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-                    <strong>Penting:</strong> Transfer <strong>persis sampai 2 digit terakhir</strong> agar MacroDroid otomatis memverifikasi!
+                <p id="qrisWarningText" class="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2 leading-relaxed">
+                    <i class="fa-solid fa-lock mr-1"></i>Nominal deposit akan dikunci otomatis di QRIS setelah kamu menekan <strong>Bayar</strong>.
                 </p>
             </div>
             <div class="flex items-center justify-between gap-2">

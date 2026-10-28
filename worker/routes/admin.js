@@ -1,9 +1,11 @@
 // worker/routes/admin.js - Dasbor superadmin: statistik, daftar user, koreksi manual credit,
-// gambar QRIS (KV), dan harga tiap tier kualitas VO (D1 settings).
+// gambar QRIS (KV), payload QRIS statis (KV) untuk QRIS dinamis, harga tiap tier, dan audit pembayaran.
 import { Hono } from 'hono';
 import { requireAuth, requireSuperadmin } from '../lib/middleware.js';
 import { usageStats, listUsers, getUser, addBalance, setSetting } from '../lib/db.js';
 import { QRIS_IMG_KEY } from './qris-image.js';
+import { QRIS_STATIC_KEY, inspectStaticPayload, validateStaticQris, buildDynamicQris, maskPayload } from '../lib/qris-emv.js';
+import { qrSvg } from '../lib/qris-svg.js';
 import { TTS_TIER_IDS } from '../lib/tts.js';
 import { DEFAULT_TIER_PRICES, loadTierPrices, sanitizePrice, settingKey, tierList } from '../lib/pricing.js';
 
@@ -79,6 +81,95 @@ router.post('/admin/qris-image', async (c) => {
 router.delete('/admin/qris-image', async (c) => {
     await c.env.ORDERS.delete(QRIS_IMG_KEY);
     return c.json({ ok: true });
+});
+
+// ===== Payload QRIS statis (sumber QRIS dinamis) =====
+
+/** Ringkasan status payload statis untuk dasbor admin (payload selalu di-mask). */
+async function qrisStaticStatus(env, kv) {
+    const found = await inspectStaticPayload(env, kv);
+    const check = found.validation;
+    return {
+        configured: !!found.payload,
+        source: found.source,
+        valid: !!(check && check.ok),
+        crcOk: !!(check && check.crcOk),
+        reason: check ? check.reason : null,
+        error: check ? check.error : null,
+        merchantName: check ? check.merchantName : null,
+        merchantCity: check ? check.merchantCity : null,
+        nmid: check ? (check.nmid || null) : null,
+        hasAmount: !!(check && check.hasAmount),
+        poi: check ? check.poi : null,
+        masked: found.payload ? maskPayload(found.payload) : null,
+        updatedAt: found.updatedAt || null,
+        updatedBy: found.updatedBy || null,
+    };
+}
+
+/** GET /api/admin/qris-static - status payload QRIS statis yang aktif (KV vs env). */
+router.get('/admin/qris-static', async (c) => {
+    return c.json(await qrisStaticStatus(c.env, c.env.ORDERS));
+});
+
+/**
+ * GET /api/admin/qris-static/preview?amount=1000 - SVG QRIS dinamis contoh untuk di-scan di HP.
+ * Pakai sebelum mengaktifkan QRIS dinamis untuk user.
+ */
+router.get('/admin/qris-static/preview', async (c) => {
+    const amount = Math.round(Number(c.req.query('amount') || 1000));
+    if (!Number.isFinite(amount) || amount < 1 || amount > 1000000) {
+        return c.json({ error: 'Nominal pratinjau tidak valid (1 - 1.000.000)' }, 400);
+    }
+    const found = await inspectStaticPayload(c.env, c.env.ORDERS);
+    if (!found.payload || !found.validation || !found.validation.ok) {
+        return c.json({ error: 'qris_static_not_configured', message: 'Payload QRIS statis belum diatur / tidak valid' }, 409);
+    }
+    try {
+        const svg = qrSvg(buildDynamicQris(found.validation.payload, amount), { size: 320 });
+        return new Response(svg, {
+            status: 200,
+            headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' },
+        });
+    } catch (e) {
+        return c.json({ error: 'qris_preview_failed', message: String(e && e.message ? e.message : e) }, 400);
+    }
+});
+
+/**
+ * POST /api/admin/qris-static {payload} - validasi lalu simpan payload QRIS statis ke KV.
+ * Key KV tanpa TTL; menghapusnya otomatis mengembalikan billing ke alur gambar statis lama.
+ */
+router.post('/admin/qris-static', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const payload = String((body && body.payload) || '');
+    const check = validateStaticQris(payload);
+    if (!check.ok) {
+        return c.json({ ok: false, error: check.error, reason: check.reason }, 400);
+    }
+    const session = c.get('session');
+    await c.env.ORDERS.put(QRIS_STATIC_KEY, JSON.stringify({
+        payload: check.payload,
+        updatedAt: Date.now(),
+        by: session ? session.email : null,
+    }));
+    return c.json({ ok: true, ...(await qrisStaticStatus(c.env, c.env.ORDERS)) });
+});
+
+/** DELETE /api/admin/qris-static - hapus payload dari KV (fallback env / alur gambar statis). */
+router.delete('/admin/qris-static', async (c) => {
+    await c.env.ORDERS.delete(QRIS_STATIC_KEY);
+    return c.json({ ok: true, ...(await qrisStaticStatus(c.env, c.env.ORDERS)) });
+});
+
+/** GET /api/admin/payments?limit=50 - audit pembayaran QRIS terbaru (rekonsiliasi). */
+router.get('/admin/payments', async (c) => {
+    const raw = Number(c.req.query('limit'));
+    const limit = Number.isFinite(raw) ? Math.min(200, Math.max(1, Math.floor(raw))) : 50;
+    const res = await c.env.VO_DB.prepare(
+        'SELECT order_id, email, base_amount, total_amount, matched_amount, match_type, created_at FROM payments ORDER BY id DESC LIMIT ?'
+    ).bind(limit).all();
+    return c.json({ payments: res.results || [], limit });
 });
 
 /** GET /api/admin/pricing - harga tier kualitas yang aktif + nilai default. */
