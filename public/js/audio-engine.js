@@ -11,6 +11,9 @@ let _rafId = 0;
 let _prerenderInflight = null; // promise prerender aktif (hindari panggilan ganda)
 
 const EXPORT_W = 1080, EXPORT_H = 1920, EXPORT_FPS = 30;
+// Batas tunggu event `start` MediaRecorder. Video 4K + encoder software bisa butuh beberapa detik
+// untuk menyala; watchdog terlalu ketat membuat ekspor gagal padahal perekam hanya terlambat.
+const RECORDER_START_TIMEOUT_MS = 15000;
 
 const SCRIPT_VERSION = 'v2';   // naikkan bila strategi TTS berubah: memaksa prerender ulang
 const SCENE_GAP_S = 0.18;      // jeda antar adegan pada timeline
@@ -325,14 +328,28 @@ async function exportMergedVideoWebM() {
         recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
 
         const done = new Promise((resolve) => { recorder.onstop = resolve; });
-        // Timeout: bila browser tak pernah memicu onstart, tombol Unduh tidak boleh terkunci selamanya.
+        // Timeout: bila perekam benar-benar tidak mau jalan, tombol Unduh tidak boleh terkunci selamanya.
+        // Sebagian browser tidak memancarkan event `start` walau perekam sudah berstatus 'recording'
+        // (terlihat saat stream menyertakan track audio dari MediaStreamDestination), jadi status
+        // perekam ikut dipantau - bukan hanya menunggu event.
         const started = new Promise((resolve, reject) => {
+            let settled = false;
+            const settle = (fn, arg) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(t);
+                clearInterval(poll);
+                fn(arg);
+            };
             const t = setTimeout(() => {
                 try { recorder.stop(); } catch (e) { /* ignore */ }
                 stream.getTracks().forEach(tr => { try { tr.stop(); } catch (e) { /* ignore */ } });
-                reject(new Error('Perekam tidak mulai (timeout).'));
-            }, 5000);
-            recorder.onstart = () => { clearTimeout(t); resolve(); };
+                settle(reject, new Error('Perekam tidak mulai (timeout).'));
+            }, RECORDER_START_TIMEOUT_MS);
+            const poll = setInterval(() => {
+                if (recorder.state === 'recording') settle(resolve);
+            }, 100);
+            recorder.onstart = () => settle(resolve);
         });
         const name = sanitizeFile((document.getElementById('productNameInput') || {}).value || 'naskah');
         let stopped = false;
