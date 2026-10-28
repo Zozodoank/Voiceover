@@ -36,8 +36,8 @@ function renderHistoryList() {
             <div class="space-y-1.5 min-w-0 flex-1">
                 <div class="flex items-center gap-2 flex-wrap">
                     <span class="px-2 py-0.5 bg-brand-500/20 text-brand-300 rounded text-[10px] font-bold">#${historyRecords.length - idx}</span>
-                    <h3 class="text-sm font-bold text-white truncate">${item.productName}</h3>
-                    <span class="px-2 py-0.5 bg-slate-800 text-slate-300 rounded text-[10px] font-mono">${item.modelLabel}</span>
+                    <h3 class="text-sm font-bold text-white truncate">${esc(item.productName)}</h3>
+                    <span class="px-2 py-0.5 bg-slate-800 text-slate-300 rounded text-[10px] font-mono">${esc(item.modelLabel)}</span>
                 </div>
                 <div class="flex items-center gap-3 text-[11px] text-slate-500">
                     <span><i class="fa-regular fa-clock mr-1"></i> ${item.timestamp}</span>

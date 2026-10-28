@@ -157,20 +157,40 @@ async function initiateCommercialGeneration() {
     }
 }
 
+/** Escape teks dari AI sebelum masuk ke innerHTML: cegah HTML/JS injection & tanda kutip yang merusak markup. */
+function esc(v) {
+    return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function renderScenesTimeline(scenes) {
     const container = document.getElementById('scenesContainer');
+    // Delegasi klik dipasang sekali: teks adegan berasal dari AI, jadi tidak boleh jadi atribut inline.
+    if (!container.dataset.sceneClickBound) {
+        container.dataset.sceneClickBound = '1';
+        container.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-scene-play]');
+            if (!btn) return;
+            const scene = (generatedScenesData || [])[Number(btn.getAttribute('data-scene-play'))];
+            if (scene) playSceneAudio(scene.text, scene.emotion);
+        });
+    }
     container.innerHTML = scenes.map((s, idx) => `
         <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
             <div class="flex items-center justify-between gap-2">
                 <div class="flex items-center gap-2">
                     <span class="w-5 h-5 rounded-full bg-brand-500/20 text-brand-400 font-bold text-[11px] flex items-center justify-center shrink-0">${idx + 1}</span>
-                    <span class="text-[11px] font-bold text-amber-300 px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded-md">${s.emotion}</span>
+                    <span class="text-[11px] font-bold text-amber-300 px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded-md">${esc(s.emotion)}</span>
                 </div>
-                <span class="text-[10px] text-slate-400 font-mono" data-scene-time="${idx}">${s.start}s - ${s.end}s</span>
+                <span class="text-[10px] text-slate-400 font-mono" data-scene-time="${idx}">${esc(s.start)}s - ${esc(s.end)}s</span>
             </div>
             <div class="flex items-center justify-between gap-2">
-                <p class="text-xs font-semibold text-slate-200 truncate flex-1">${s.text}</p>
-                <button onclick="playSceneAudio('${s.text}', '${s.emotion}')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs shrink-0 flex items-center gap-1">
+                <p class="text-xs font-semibold text-slate-200 truncate flex-1">${esc(s.text)}</p>
+                <button data-scene-play="${idx}" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs shrink-0 flex items-center gap-1">
                     <i class="fa-solid fa-volume-high text-brand-400"></i> Dengar
                 </button>
             </div>
