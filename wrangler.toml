@@ -44,6 +44,11 @@ AIVENE_TTS_VOICE = "nova"                              # voice AIVene tetap untu
 AIVENE_TTS_VOICES = ""                                # (legacy) kosong = voice default Gemini
 GEMINI_FALLBACK_ENABLED = "true"
 
+# --- QRIS dinamis (payload statis merchant diatur dari dasbor admin -> KV 'qris_static') ---
+QRIS_ORDER_TTL_SECONDS = "1800"                       # masa berlaku QRIS dinamis (detik)
+QRIS_MIN_AMOUNT = "1000"                              # batas nominal deposit minimum (Rupiah)
+QRIS_MAX_AMOUNT = "10000000"                          # batas nominal deposit maksimum (Rupiah)
+
 # --- Observability (Workers Logs / Traces / Issues) ---
 [observability]
 enabled = true

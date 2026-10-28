@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "hono": "^4.6.0",
-    "jose": "^5.9.0"
+    "jose": "^5.9.0",
+    "qrcode-generator": "^2.0.4"
   },
   "devDependencies": {
     "wrangler": "^4.152.0"

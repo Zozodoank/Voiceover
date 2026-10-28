@@ -18,3 +18,19 @@ CREATE TABLE IF NOT EXISTS settings (
     value      TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Ledger pembayaran QRIS: audit + penjaga idempotensi webhook MacroDroid.
+-- order_id UNIQUE membuat kiriman notifikasi ganda tidak pernah mengkredit saldo dua kali:
+-- INSERT + UPDATE saldo dijalankan dalam satu batch (transaksi) di worker.
+CREATE TABLE IF NOT EXISTS payments (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id       TEXT    NOT NULL UNIQUE,
+    email          TEXT    NOT NULL,
+    base_amount    INTEGER NOT NULL,
+    total_amount   INTEGER NOT NULL,
+    matched_amount INTEGER,
+    match_type     TEXT    NOT NULL,       -- 'exact' | 'code' | 'scan'
+    raw_text       TEXT,
+    created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_payments_email ON payments(email);
