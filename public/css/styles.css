@@ -28,3 +28,7 @@ html, body {
         1px 1px 0 #000,
         0px 2px 4px rgba(0,0,0,0.8);
 }
+
+/* Warna kata subtitle pratinjau: sama dengan burn-in kanvas (aktif kuning, sisanya putih) */
+.sub-word { color: #ffffff; }
+.sub-word-active { color: #fde047; }

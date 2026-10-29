@@ -11,6 +11,19 @@ let _rafId = 0;
 let _prerenderInflight = null; // promise prerender aktif (hindari panggilan ganda)
 
 const EXPORT_W = 1080, EXPORT_H = 1920, EXPORT_FPS = 30;
+
+// Subtitle burn-in: satu tempat untuk ukuran, warna, dan ritme kemunculan.
+const SUB_FONT_PX = 46;             // sebelumnya 60 ("kecilkan sedikit")
+const SUB_LINE_H = 58;              // sebelumnya 74
+const SUB_MAX_LINES = 2;            // cue 3 kata -> hampir selalu 1 baris
+const SUB_WORDS_PER_CUE = 3;        // kata per kemunculan, mengikuti voice over
+const SUB_MAX_WIDTH = EXPORT_W - 160;
+const SUB_BOTTOM_PAD = 150;         // jarak baseline baris terakhir dari bawah kanvas
+const SUB_COLOR_IDLE = '#ffffff';   // kata lain di cue
+const SUB_COLOR_ACTIVE = '#fde047'; // kata yang sedang diucapkan
+const SUB_STROKE_PX = 5;            // garis tepi (bukan kotak latar): 8 terlalu tebal, 3 tenggelam di footage terang
+const SUB_PAUSE_WEIGHT = 3;         // kata berakhir tanda baca -> diucapkan lebih lama
+
 // Batas tunggu event `start` MediaRecorder. Video 4K + encoder software bisa butuh beberapa detik
 // untuk menyala; watchdog terlalu ketat membuat ekspor gagal padahal perekam hanya terlambat.
 const RECORDER_START_TIMEOUT_MS = 15000;
@@ -177,15 +190,17 @@ function buildTimeline() {
         const a = sceneAudios[i];
         if (!a || !a.buffer) continue;
         const dur = Math.max(0.2, a.duration || a.buffer.duration);
+        const start = cursor, end = cursor + dur;
         segments.push({
             index: i,
-            start: cursor,
-            end: cursor + dur,
+            start,
+            end,
             dur,
             text: scenes[i].text || '',
             emotion: scenes[i].emotion || '',
+            cues: buildSubtitleCues(scenes[i].text, start, end), // dipakai burn-in & overlay pratinjau
         });
-        cursor += dur + SCENE_GAP_S;
+        cursor = end + SCENE_GAP_S;
     }
     const total = segments.length ? segments[segments.length - 1].end : 0;
     return { segments, total };
@@ -206,7 +221,11 @@ function subtitleIndexAt(segments, elapsed) {
 function scheduleScenes(ctx, destNodes, leadIn) {
     assertAllAudio();
     const timeline = buildTimeline();
-    const startTime = ctx.currentTime + (Number.isFinite(leadIn) && leadIn >= 0 ? leadIn : 0.08);
+    // Dua pembacaan di titik waktu yang sama: jam audio (acuan penjadwalan) dan jam dinding.
+    // Dipakai createRunClock() agar visual tetap berjalan walau jam audio berhenti.
+    const scheduledAt = ctx.currentTime;
+    const scheduledWall = performance.now();
+    const startTime = scheduledAt + (Number.isFinite(leadIn) && leadIn >= 0 ? leadIn : 0.08);
     _activeSources = [];
     timeline.segments.forEach((seg) => {
         const a = sceneAudios[seg.index];
@@ -218,23 +237,57 @@ function scheduleScenes(ctx, destNodes, leadIn) {
     });
     return {
         startTime,
+        scheduledAt,
+        scheduledWall,
         timeline,
         stop: () => { _activeSources.forEach(s => { try { s.stop && s.stop(); } catch (e) { /* ignore */ } }); },
     };
 }
 
-function updateOverlayDOM(sceneIdx) {
-    const scene = (generatedScenesData || [])[sceneIdx] || {};
-    const sub = document.getElementById('subtitleOverlayText');
-    const badge = document.getElementById('currentSceneBadgeText');
-    if (sub) sub.innerText = scene.text || '';
-    if (badge) badge.innerText = `Adegan ${sceneIdx + 1}: ${scene.emotion || ''}`;
+/**
+ * Jam detik berjalan untuk menggambar frame (playback maupun ekspor).
+ * Audio dijadwalkan di atas jam AudioContext, tetapi jam itu bisa BERHENTI walau dinding terus
+ * berjalan - misalnya browser tanpa perangkat audio (headless), tab di latar, atau device yang
+ * diambil alih aplikasi lain. Dulu visual ikut membeku di satu frame subtitle. Sekarang jam
+ * dinding yang dijangkarkan ke jadwal audio diambil sebagai batas atas: frame tidak pernah
+ * tertinggal dari suara, dan tidak pernah diam menunggu jam yang berhenti.
+ */
+function createRunClock(ctx, run) {
+    const leadS = run.startTime - run.scheduledAt; // jarak jadwal -> awal audio (lead-in)
+    let last = 0;
+    return function elapsedSeconds() {
+        const audio = ctx.currentTime - run.startTime;
+        const wall = (performance.now() - run.scheduledWall) / 1000 - leadS;
+        const next = Math.max(audio, wall, 0);
+        if (next > last) last = next; // monoton: jam audio yang melompat mundur tidak memutar balik video
+        return last;
+    };
 }
 
-function clearSubtitleText() {
-    const sub = document.getElementById('subtitleOverlayText');
-    if (sub) sub.innerText = '';
+/** Perbarui overlay pratinjau (cue yang sama dengan burn-in) + badge adegan. */
+function updateOverlayDOM(sceneIdx, sub) {
+    const scene = (generatedScenesData || [])[sceneIdx] || {};
+    const badge = document.getElementById('currentSceneBadgeText');
+    if (badge && sceneIdx >= 0) badge.innerText = `Adegan ${sceneIdx + 1}: ${scene.emotion || ''}`;
+    renderOverlaySubtitle(sub);
 }
+
+/** Tulis cue aktif ke overlay pratinjau: warna & kata sama dengan burn-in kanvas. */
+function renderOverlaySubtitle(sub) {
+    const el = document.getElementById('subtitleOverlayText');
+    if (!el) return;
+    el.textContent = '';
+    if (!sub || !sub.cue) return;
+    sub.cue.words.forEach((w, i) => {
+        if (i) el.appendChild(document.createTextNode(' '));
+        const span = document.createElement('span');
+        span.className = (w === sub.word) ? 'sub-word sub-word-active' : 'sub-word';
+        span.textContent = w.text;
+        el.appendChild(span);
+    });
+}
+
+function clearSubtitleText() { renderOverlaySubtitle(null); }
 
 function stopEverything() {
     _playToken++;
@@ -264,16 +317,21 @@ async function startMergedPlayback() {
     document.getElementById('sceneOverlayBadge').classList.remove('hidden');
 
     const run = scheduleScenes(ctx, [ctx.destination], 0.12);
-    let lastIdx = -2;
+    const clock = createRunClock(ctx, run);
+    // Tulis DOM hanya saat state subtitle berubah (per kata), bukan tiap frame.
+    let lastKey = '';
     (function loop() {
         if (_playToken !== myTok) return;
-        const elapsed = ctx.currentTime - run.startTime;
+        const elapsed = clock();
         if (elapsed >= run.timeline.total) { stopEverything(); resetPlayBtn && resetPlayBtn(); return; }
         const idx = subtitleIndexAt(run.timeline.segments, elapsed);
-        if (idx !== lastIdx) {
-            if (idx >= 0) updateOverlayDOM(run.timeline.segments[idx].index);
-            else clearSubtitleText();
-            lastIdx = idx;
+        const seg = idx >= 0 ? run.timeline.segments[idx] : null;
+        const cue = seg ? subtitleCueAt(seg.cues, elapsed) : null;
+        const word = activeSubtitleWord(cue, elapsed);
+        const key = (seg ? seg.index : -1) + '|' + (cue ? cue.start : '') + '|' + (word ? word.start : '');
+        if (key !== lastKey) {
+            updateOverlayDOM(seg ? seg.index : -1, { cue, word });
+            lastKey = key;
         }
         _rafId = requestAnimationFrame(loop);
     })();
@@ -320,7 +378,19 @@ async function exportMergedVideoWebM() {
         const myTok = ++_playToken; ctx._tok = myTok;
 
         // Video track dari kanvas; audio track dari destination; gabung
-        const stream = comp.captureStream(EXPORT_FPS);
+        // requestFrame() dipakai bila tersedia: stream dibuat beralaju 0 dan satu frame diminta tepat
+        // setelah kanvas selesai digambar, jadi isi rekaman SELALU frame terbaru. Timer kompositor
+        // tidak lagi menentukan isi frame - di sebagian lingkungan (browser headless, tab tersembunyi)
+        // timer itu berhenti sehingga rekaman membeku di satu gambar. Tanpa requestFrame() jatuh ke
+        // laju tetap seperti sebelumnya.
+        let stream = comp.captureStream(0);
+        let vTrack = stream.getVideoTracks()[0];
+        const manualFrames = !!(vTrack && typeof vTrack.requestFrame === 'function');
+        if (!manualFrames) {
+            stream.getVideoTracks().forEach(t => { try { t.stop(); } catch (e) { /* ignore */ } });
+            stream = comp.captureStream(EXPORT_FPS);
+            vTrack = stream.getVideoTracks()[0];
+        }
         dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
 
         const chunks = [];
@@ -355,8 +425,10 @@ async function exportMergedVideoWebM() {
         let stopped = false;
         let run = null;
         let kaOsc = null;
+        let watchdog = 0;
         const finish = () => {
             if (stopped) return; stopped = true;
+            if (watchdog) { clearTimeout(watchdog); watchdog = 0; }
             if (_rafId) cancelAnimationFrame(_rafId);
             if (run) run.stop();
             if (kaOsc) { try { kaOsc.stop(); } catch (e) { /* ignore */ } }
@@ -377,6 +449,10 @@ async function exportMergedVideoWebM() {
         if (_playToken !== myTok || stopped) { finish(); return; }
 
         run = scheduleScenes(ctx, [dest], LEAD_IN_S); // audio TTS -> stream, dengan lead-in senyap
+        const clock = createRunClock(ctx, run);
+        // Jaring pengaman: bila requestAnimationFrame berhenti total (tab benar-benar tersembunyi),
+        // ekspor tetap ditutup supaya tombol Unduh tidak terkunci selamanya.
+        watchdog = setTimeout(finish, (LEAD_IN_S + run.timeline.total + 5) * 1000);
         // Sumber senyap (gain 0) menjaga track audio MediaStreamDestination tetap merender selama
         // rekaman. Tanpa ini, saat tidak ada buffer audio, Chrome menulis WebM 0-byte.
         const kaGain = ctx.createGain(); kaGain.gain.value = 0;
@@ -384,17 +460,30 @@ async function exportMergedVideoWebM() {
         kaOsc.connect(kaGain); kaGain.connect(dest);
         kaOsc.start(run.startTime); kaOsc.stop(run.startTime + run.timeline.total + 0.5);
 
+        const frameMs = 1000 / EXPORT_FPS;
+        let lastFrameAt = 0;
         (function draw() {
             if (_playToken !== myTok) { finish(); return; }
-            const elapsed = ctx.currentTime - run.startTime;
+            const elapsed = clock();
             if (elapsed >= run.timeline.total) { setTimeout(finish, 250); return; }
+            // Paling banyak satu frame per EXPORT_FPS. Menggambar lebih cepat dari laju rekaman hanya
+            // membuat encoder membuang frame (encoder software bisa tertinggal jauh), sehingga isi
+            // video jadi lebih sedikit daripada yang digambar.
+            const now = performance.now();
+            if (now - lastFrameAt < frameMs - 1) { _rafId = requestAnimationFrame(draw); return; }
+            lastFrameAt = now;
             const segIdx = subtitleIndexAt(run.timeline.segments, Math.max(0, elapsed));
+            const seg = segIdx >= 0 ? run.timeline.segments[segIdx] : null;
             const sceneIdx = segIdx >= 0 ? run.timeline.segments[segIdx].index : (run.timeline.segments[0] || {}).index || 0;
+            const t = Math.max(0, elapsed);
+            const cue = seg ? subtitleCueAt(seg.cues, t) : null;
+            const sub = seg ? { cue, word: activeSubtitleWord(cue, t) } : null;
             try {
-                drawFrame(cctx, comp, sceneIdx, segIdx < 0);
+                drawFrame(cctx, comp, sceneIdx, sub);
             } catch (err) {
                 if (err && err.name === 'SecurityError') { finish(); showToast('Video lintas-origin menodai kanvas (CORS). Ekspor dibatalkan; pakai .SRT.', 'error'); return; }
             }
+            if (manualFrames) { try { vTrack.requestFrame(); } catch (e) { /* ignore */ } }
             _rafId = requestAnimationFrame(draw);
         })();
 
@@ -429,8 +518,52 @@ function pickWebmMime() {
     return '';
 }
 
+/**
+ * Pecah teks adegan jadi cue pendek (SUB_WORDS_PER_CUE kata) + waktu tiap kata.
+ * TTS tidak mengirim timestamp per kata, jadi durasi dibagi proporsional dari panjang
+ * kata + jeda tanda baca, DI DALAM durasi audio asli adegan. Cue selalu bersambung
+ * (cue.end === cue berikutnya.start) sehingga tidak ada kedip di tengah adegan.
+ * -> [{ start, end, words: [{ text, start, end }] }]
+ */
+function buildSubtitleCues(text, start, end) {
+    const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return [];
+    const weights = words.map(w => Math.max(1, w.length) + (/[,.;:!?]$/.test(w) ? SUB_PAUSE_WEIGHT : 0));
+    const total = weights.reduce((a, b) => a + b, 0);
+    const dur = Math.max(0.001, end - start);
+    let acc = 0;
+    const timed = words.map((w, i) => {
+        const s = start + (acc / total) * dur;
+        acc += weights[i];
+        return { text: w, start: s, end: start + (acc / total) * dur };
+    });
+    const cues = [];
+    for (let i = 0; i < timed.length; i += SUB_WORDS_PER_CUE) {
+        const chunk = timed.slice(i, i + SUB_WORDS_PER_CUE);
+        cues.push({ start: chunk[0].start, end: chunk[chunk.length - 1].end, words: chunk });
+    }
+    return cues;
+}
+
+/** Cue yang tampil pada detik t (null saat jeda antar adegan / belum bicara). */
+function subtitleCueAt(cues, t) {
+    const list = cues || [];
+    for (let i = 0; i < list.length; i++) {
+        if (t >= list[i].start && t < list[i].end) return list[i];
+    }
+    return null;
+}
+
+/** Kata yang sedang diucapkan di dalam cue (null bila cue kosong). */
+function activeSubtitleWord(cue, t) {
+    if (!cue) return null;
+    let cur = cue.words[0] || null;
+    for (const w of cue.words) { if (t >= w.start) cur = w; else break; }
+    return cur;
+}
+
 /** Gambar satu frame kompositor: visual (video/kanvas) + badge emosi + subtitle burn-in. */
-function drawFrame(cctx, comp, idx, hideSubtitle) {
+function drawFrame(cctx, comp, idx, sub) {
     const scene = (generatedScenesData || [])[idx] || {};
     const vis = getVisualSource();
     // dasar hitam
@@ -444,16 +577,34 @@ function drawFrame(cctx, comp, idx, hideSubtitle) {
     cctx.fillStyle = '#fff'; cctx.font = 'bold 32px Inter, sans-serif'; cctx.textAlign = 'left'; cctx.textBaseline = 'middle';
     cctx.fillText(`Adegan ${idx + 1}: ${scene.emotion || ''}`, 40, 56);
     // subtitle burn-in (bawah, tengah) - kosong saat jeda antar adegan
-    const text = hideSubtitle ? '' : (scene.text || '');
-    if (text) {
-        cctx.font = '800 60px Inter, sans-serif'; cctx.textAlign = 'center'; cctx.textBaseline = 'alphabetic';
-        const lines = wrapText(cctx, text, comp.width - 120);
-        let y = comp.height - 120 - (lines.length - 1) * 74;
-        for (const ln of lines) {
-            cctx.lineWidth = 8; cctx.strokeStyle = 'rgba(0,0,0,0.85)'; cctx.strokeText(ln, comp.width / 2, y);
-            cctx.fillStyle = '#fde047'; cctx.fillText(ln, comp.width / 2, y);
-            y += 74;
+    drawSubtitle(cctx, comp, sub);
+}
+
+/**
+ * Burn-in subtitle: cue pendek di bawah tengah, tanpa kotak latar.
+ * Kata yang sedang diucapkan kuning, kata lain putih (gaya "viral").
+ */
+function drawSubtitle(cctx, comp, sub) {
+    const cue = sub && sub.cue;
+    if (!cue || !cue.words.length) return;
+    cctx.font = `800 ${SUB_FONT_PX}px Inter, sans-serif`;
+    cctx.textAlign = 'left'; cctx.textBaseline = 'alphabetic';
+    cctx.lineJoin = 'round'; cctx.miterLimit = 2;
+    cctx.lineWidth = SUB_STROKE_PX; cctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    const space = cctx.measureText(' ').width;
+    const words = cue.words.map(w => ({ ref: w, text: w.text, width: cctx.measureText(w.text).width }));
+    const lines = wrapCueWords(words, space, SUB_MAX_WIDTH);
+    let y = comp.height - SUB_BOTTOM_PAD - (lines.length - 1) * SUB_LINE_H;
+    for (const line of lines) {
+        const lineW = line.reduce((s, w) => s + w.width, 0) + space * (line.length - 1);
+        let x = (comp.width - lineW) / 2;
+        for (const w of line) {
+            cctx.strokeText(w.text, x, y);
+            cctx.fillStyle = (sub.word && w.ref === sub.word) ? SUB_COLOR_ACTIVE : SUB_COLOR_IDLE;
+            cctx.fillText(w.text, x, y);
+            x += w.width + space;
         }
+        y += SUB_LINE_H;
     }
 }
 
@@ -471,15 +622,16 @@ function roundRect(cctx, x, y, w, h, r) {
     cctx.arcTo(x, y + h, x, y, r); cctx.arcTo(x, y, x + w, y, r); cctx.closePath();
 }
 
-function wrapText(cctx, text, maxW) {
-    const words = String(text).split(/\s+/); const lines = []; let line = '';
-    for (const wd of words) {
-        const test = line ? line + ' ' + wd : wd;
-        if (cctx.measureText(test).width > maxW && line) { lines.push(line); line = wd; }
-        else line = test;
+/** Bungkus kata cue jadi baris (maks SUB_MAX_LINES) dari lebar tiap kata. */
+function wrapCueWords(words, space, maxW) {
+    const lines = []; let line = []; let w = 0;
+    for (const it of words) {
+        const add = line.length ? space + it.width : it.width;
+        if (line.length && w + add > maxW) { lines.push(line); line = [it]; w = it.width; }
+        else { line.push(it); w += add; }
     }
-    if (line) lines.push(line);
-    return lines.slice(0, 4); // maks 4 baris (kanvas portrait)
+    if (line.length) lines.push(line);
+    return lines.slice(0, SUB_MAX_LINES);
 }
 
 function sanitizeFile(s) {
