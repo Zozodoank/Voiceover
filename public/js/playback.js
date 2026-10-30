@@ -1,6 +1,6 @@
 // public/js/playback.js - Kontrol pemutaran gabungan & utilitas salin/unduh subtitle.
-// Pemutaran & perekaman audio-VO ditangani audio-engine.js. Waktu subtitle SELALU dari timeline
-// audio asli (buildTimeline), bukan timestamp perkiraan AI -> SRT sinkron dengan voice over.
+// Pemutaran & perekaman audio-VO ditangani audio-engine.js. Waktu subtitle SELALU dari
+// buildTimeline() - timeline berjangkar visual yang sama dengan playback & ekspor.
 
 function togglePlayMergedVideo() {
     const btnText = document.getElementById('playMergedText');
@@ -26,7 +26,7 @@ function togglePlayMergedVideo() {
     });
 }
 
-/** Bangun konten SRT dari timeline audio ASLI (sama dengan yang dipakai playback & ekspor). */
+/** Bangun konten SRT dari timeline yang sama dengan playback & ekspor (jendela adegan visual). */
 function buildSrtContent(timeline) {
     const fmt = (sec) => {
         const ms = Math.round((sec - Math.floor(sec)) * 1000);

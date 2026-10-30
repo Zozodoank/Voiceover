@@ -84,8 +84,9 @@ email dengan koma). Akun tersebut mendapat saldo **∞ tanpa batas** (tidak pern
 `/admin.html`.
 
 ## Analisa Video (Bagaimana Bekerja)
-- Browser mengekstrak **1 frame/detik, maks 16 frame, JPEG ≤768px (±1 MB total)** via `<video>`+canvas
+- Browser mengekstrak **1 frame/detik, maks 6 frame, JPEG ≤320px (±1 MB total)** via `<video>`+canvas
   (`public/js/frames.js`) — **tanpa ffmpeg.wasm**, sesuai prinsip pemrosesan berat di sisi user.
+  Setiap frame membawa **detik asalnya** (`{t, dataUrl}`) dan detik itu ikut dikirim ke server.
 - `POST /api/analyze` → **Gemini flash (free tier)** sebagai model utama; saat 429/5xx/timeout 20s
   otomatis **fallback ke AIVene `qwen3.8-flash`** (±Rp 50 per analisa).
 - Keluaran dinormalisasi ke JSON: `{research, scenes:[{start,end,emotion,text}], caption, hashtags}`.
@@ -93,6 +94,48 @@ email dengan koma). Akun tersebut mendapat saldo **∞ tanpa batas** (tidak pern
   HTTP 502 dan saldo tidak berubah. Harga: Rp 1.200 / 1.500 / 1.800 sesuai model di UI.
 - Batasan: frame tidak memuat audio — prompt meminta model membaca teks on-screen.
   (Opsional fase berikutnya: kirim klip audio sebagai `inlineData audio/mp4`.)
+
+## Sinkronisasi VO ↔ Visual
+
+Voice over **mengikuti timeline video**, bukan sebaliknya. Satu aturan dipakai untuk pratinjau, burn-in
+subtitle, ekspor WebM, dan berkas `.SRT` (`planTimeline()` di `public/js/audio-engine.js`).
+
+1. **Jam utama = video.** `video.duration` dibaca dari `#mainVideo`; video diputar 1x dari detik 0, tidak
+di-loop lagi. Bila `currentTime` video melenceng > 0,15 dtk (pratinjau) / 0,2 dtk (ekspor), posisinya
+dikoreksi — jadi visual tidak pernah mengulang di tengah kalimat.
+2. **Timestamp frame nyata.** `extractFrames()` mengembalikan `{t, dataUrl}`; `t` ikut dikirim ke
+`POST /api/analyze` sebagai `frameTimes`. Tanpa ini model diberi tahu "frame N = detik N" padahal sampelnya
+berjarak `duration / jumlahFrame`.
+3. **Batas adegan divalidasi server** (`normalizeResult()` di `worker/lib/ai.js`): kontigu (`start` =
+`end` adegan sebelumnya), di-*snap* ke detik frame terdekat (±0,75 dtk), adegan < 1,2 dtk digabung, dan
+adegan terakhir ditutup tepat di durasi video.
+4. **Anggaran kata.** Prompt memuat jendela antar frame beserta batas katanya (±**2,6 kata/detik**),
+sehingga kalimat VO muat di adegannya dan CTA tidak perlu dipotong.
+5. **Tempo terbatas.** Kalau audio tetap lebih panjang dari jendelanya, adegan itu dipercepat maksimal
+**1,18x** (`SCENE_MAX_TEMPO`); bila lebih pendek, sisanya jadi jeda. Ekor adegan tidak pernah menimpa
+adegan berikutnya (`start` minimal = akhir adegan sebelumnya + 0,12 dtk).
+6. **Fallback data lama.** Proyek riwayat tanpa `start/end` tetap diputar berurutan seperti sebelumnya,
+sementara proyek baru menyimpan `videoDuration` dan mengingatkan bila video yang dimuat berbeda.
+7. **Kontrol terkait.** Toggle "Tampilkan Subtitle Otomatis" mematikan overlay sekaligus burn-in (`.SRT`
+tetap bisa diunduh), label durasi menampilkan posisi/total, dan badge segmen diisi jumlah adegan nyata
+setelah generate. Video lebih dari **30 detik** ditolak saat upload.
+8. **Audio basi dibatalkan.** Mengganti video, memuat proyek riwayat, atau membuat naskah baru memanggil
+`invalidateSceneAudios()`: prerender TTS yang masih berjalan dihentikan (`_prerenderToken`) supaya
+`sceneAudios` tidak terisi sebagian audio milik timeline lama - tanpa ini ekspor bisa gagal dengan
+pesan "suara adegan N gagal dibuat".
+
+Uji terkait:
+```
+node .wrangler/test-analysis-timeline.mjs   # prompt frameTimes + anggaran kata + normalisasi kontigu (tanpa server)
+node .wrangler/test-analyze-validation.mjs  # validasi POST /api/analyze di edge (butuh wrangler dev, tanpa kuota AI)
+node .wrangler/verify-vo-visual-sync.mjs    # timeline berjangkar visual + tempo + total = durasi video
+                                           # + pembatalan prerender basi (Chrome headless)
+node .wrangler/verify-subtitle-sync.mjs     # subtitle mengikuti jendela adegan, termasuk jalur fallback
+node .wrangler/verify-srt-unchanged.mjs     # format .SRT tetap, jalur berurutan maupun berjangkar
+node .wrangler/verify-vo-visual-app.mjs     # end-to-end browser: upload -> frameTimes -> putar -> ekspor WebM
+                                           # butuh `npx wrangler dev`; tambah --headful agar ekspor WebM
+                                           # benar-benar terekam (encoder headless sering 0 byte)
+```
 
 ## QRIS + MacroDroid
 - Order disimpan di **KV `ORDERS`** (TTL 1800 s / `QRIS_ORDER_TTL_SECONDS`) terikat email user; kode unik

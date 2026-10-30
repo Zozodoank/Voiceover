@@ -58,11 +58,14 @@ async function initiateCommercialGeneration() {
     // Tahap 1: ekstrak frame di browser (hemat kuota; video utuh tidak pernah dikirim)
     setProgress(20, `<i class="fa-solid fa-circle-notch fa-spin"></i> Mengekstrak frame video di perangkat Anda...`);
     let frameDataUrls;
-    let duration = parseFloat(document.getElementById('videoDurationBadge').innerText) || 15;
+    let frameTimes;
+    const duration = getVideoDurationS() || 15; // durasi video = jam visual yang dipakai AI
     try {
         if (uploadedVideoFile) {
             const frames = await extractFrames(uploadedVideoFile, { fps: 1, maxFrames: 6, width: 320, quality: 0.65 });
             frameDataUrls = frames.map(f => f.dataUrl);
+            // Detik tiap frame WAJIB ikut ke server: tanpa ini AI mengira 1 frame = 1 detik.
+            frameTimes = frames.map(f => Math.round(f.t * 100) / 100);
         } else {
             throw new Error('Belum ada video dimuat. Upload video produk terlebih dahulu.');
         }
@@ -80,6 +83,7 @@ async function initiateCommercialGeneration() {
             method: 'POST',
             body: {
                 frames: frameDataUrls,
+                frameTimes,
                 productName,
                 affiliateLink: document.getElementById('affiliateLinkInput').value.trim(),
                 duration,
@@ -124,6 +128,7 @@ async function initiateCommercialGeneration() {
     document.getElementById('affiliateLinkDisplay').innerText = affLink;
 
     renderScenesTimeline(generatedScenesData);
+    document.getElementById('sceneCountBadge').innerText = generatedScenesData.length + ' Segmen';
 
     document.getElementById('playMergedBtn').removeAttribute('disabled');
     document.getElementById('exportMergedBtn').removeAttribute('disabled');
@@ -135,6 +140,7 @@ async function initiateCommercialGeneration() {
         modelLabel: resolvedModelLabel,
         gender,
         voiceName,
+        videoDuration: duration,
         caption: generatedCaptionText,
         hashtags: generatedHashtagsText,
         scenesCount: generatedScenesData.length,
@@ -148,7 +154,7 @@ async function initiateCommercialGeneration() {
     setTimeout(() => statusBox.classList.add('hidden'), 3000);
 
     // Prerender audio Gemini TTS untuk semua adegan di latar belakang (agar Putar/Unduh WebM langsung sinkron).
-    sceneAudios = []; sceneAudiosKey = '';
+    if (typeof invalidateSceneAudios === 'function') invalidateSceneAudios();
     if (typeof ensureSceneAudios === 'function') {
         showToast('Menyiapkan audio tiap adegan…', 'info');
         ensureSceneAudios().then(() => {
@@ -175,8 +181,9 @@ function renderScenesTimeline(scenes) {
         container.addEventListener('click', (e) => {
             const btn = e.target.closest('[data-scene-play]');
             if (!btn) return;
-            const scene = (generatedScenesData || [])[Number(btn.getAttribute('data-scene-play'))];
-            if (scene) playSceneAudio(scene.text, scene.emotion);
+            const idx = Number(btn.getAttribute('data-scene-play'));
+            const scene = (generatedScenesData || [])[idx];
+            if (scene) playSceneAudio(scene, idx);
         });
     }
     container.innerHTML = scenes.map((s, idx) => `
@@ -198,14 +205,16 @@ function renderScenesTimeline(scenes) {
     `).join('');
 }
 
-function playSceneAudio(text, emotion) {
-    // Dengar naskah adegan dengan voice TTS terpilih + nuansa emosi (model mengikuti tier kualitas)
+function playSceneAudio(scene, idx) {
+    // Dengarkan naskah adegan dengan voice TTS terpilih + nuansa emosi (model mengikuti tier kualitas).
+    // Audio hasil prerender dipakai lebih dulu: tempo sudah disesuaikan & tidak memakan kuota TTS.
+    if (typeof playCachedSceneAudio === 'function' && playCachedSceneAudio(Number(idx))) return;
     const v = getSelectedVoice();
     const tier = (typeof getSelectedTier === 'function') ? getSelectedTier() : '';
-    previewVoice(v.name, null, text, emotion, tier);
+    previewVoice(v.name, null, scene.text, scene.emotion, tier);
 }
 
-/** Tempelkan durasi audio ASLI ke daftar adegan (bukan perkiraan timestamp AI). */
+/** Tempelkan waktu adegan dari timeline (jendela visual + durasi audio asli, bukan tebakan AI). */
 function paintSceneDurations() {
     if (typeof buildTimeline !== 'function') return;
     const tl = (typeof window.getSceneTimeline === 'function') ? window.getSceneTimeline() : buildTimeline();
@@ -213,4 +222,5 @@ function paintSceneDurations() {
         const el = document.querySelector('[data-scene-time="' + seg.index + '"]');
         if (el) el.innerText = seg.start.toFixed(1) + 's - ' + seg.end.toFixed(1) + 's';
     });
+    if (typeof paintPlaybackClock === 'function') paintPlaybackClock(0, tl.total);
 }

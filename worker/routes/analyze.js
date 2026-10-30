@@ -19,8 +19,16 @@ router.post('/analyze', requireAuth, async (c) => {
         return c.json({ error: 'Frame video wajib disertakan' }, 400);
     }
 
-    // Validasi payload di edge sebelum meneruskan ke AI
-    const frames = body.frames.filter(f => typeof f === 'string' && f.startsWith('data:image/jpeg;base64,'));
+    // Validasi payload di edge sebelum meneruskan ke AI. Frame dipasangkan dengan detiknya
+    // supaya membuang frame rusak tidak menggeser timestamp frame berikutnya.
+    const rawTimes = Array.isArray(body.frameTimes) ? body.frameTimes : [];
+    const pairs = [];
+    body.frames.forEach((f, i) => {
+        if (typeof f === 'string' && f.startsWith('data:image/jpeg;base64,')) {
+            pairs.push({ frame: f, t: Number(rawTimes[i]) });
+        }
+    });
+    const frames = pairs.map(p => p.frame);
     if (frames.length === 0 || frames.length > MAX_FRAMES) {
         return c.json({ error: `Jumlah frame tidak valid (1-${MAX_FRAMES} JPEG)` }, 400);
     }
@@ -33,6 +41,13 @@ router.post('/analyze', requireAuth, async (c) => {
 
     const productName = String(body.productName || '').trim();
     if (!productName) return c.json({ error: 'Nama produk wajib diisi' }, 400);
+
+    // Durasi wajar: dipakai menyusun jendela adegan & anggaran kata naskah.
+    const duration = Math.min(60, Math.max(3, Number(body.duration) || 15));
+    // Timestamp frame hanya dipakai bila lengkap & masuk akal; selain itu server memakai fallback.
+    const frameTimes = pairs.length && pairs.every(p => Number.isFinite(p.t) && p.t >= 0 && p.t <= duration)
+        ? pairs.map(p => Math.round(p.t * 10) / 10)
+        : null;
 
     const platform = ['shopee', 'tiktok', 'reels', 'youtube'].includes(body.platform) ? body.platform : 'shopee';
 
@@ -63,9 +78,10 @@ router.post('/analyze', requireAuth, async (c) => {
     try {
         analyzed = await analyzeVideo(c.env, {
             frames,
+            frameTimes,
             productName,
             affiliateLink: String(body.affiliateLink || ''),
-            duration: Number(body.duration) || 15,
+            duration,
             gender,
             platform,
             voiceName,

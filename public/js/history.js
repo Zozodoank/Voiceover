@@ -72,7 +72,7 @@ function loadHistoryRecord(idx) {
     renderScenesTimeline(generatedScenesData);
 
     // Naskah berubah -> audio lama tidak berlaku; siapkan ulang agar timestamp memakai durasi asli.
-    sceneAudios = []; sceneAudiosKey = '';
+    if (typeof invalidateSceneAudios === 'function') invalidateSceneAudios();
     if (typeof ensureSceneAudios === 'function') {
         ensureSceneAudios().then(() => { if (typeof paintSceneDurations === 'function') paintSceneDurations(); })
             .catch(() => { /* diulang saat Putar/Unduh ditekan */ });
@@ -80,9 +80,18 @@ function loadHistoryRecord(idx) {
     
     document.getElementById('playMergedBtn').removeAttribute('disabled');
     document.getElementById('exportMergedBtn').removeAttribute('disabled');
+    const realCount = (generatedScenesData || []).length;
+    if (realCount) document.getElementById('sceneCountBadge').innerText = realCount + ' Segmen';
 
     switchMainTab('studio');
-    showToast(`Proyek "${item.productName}" berhasil dimuat kembali!`, 'success');
+    // Proyek menyimpan durasi video aslinya: tanpa video yang sama, jendela adegan tidak akan pas.
+    const currentDur = (typeof getVideoDurationS === 'function') ? getVideoDurationS() : 0;
+    if (item.videoDuration && (!currentDur || Math.abs(currentDur - item.videoDuration) > 0.5)) {
+        const need = Number(item.videoDuration).toFixed(1);
+        showToast(`Proyek "${item.productName}" dimuat. Unggah video ${need}s yang sama agar pratinjau sinkron.`, 'info');
+    } else {
+        showToast(`Proyek "${item.productName}" berhasil dimuat kembali!`, 'success');
+    }
 }
 
 function deleteHistoryRecord(idx) {
