@@ -56,7 +56,7 @@ async function initiateCommercialGeneration() {
     };
 
     // Tahap 1: ekstrak frame di browser (hemat kuota; video utuh tidak pernah dikirim)
-    setProgress(20, `<i class="fa-solid fa-circle-notch fa-spin"></i> Mengekstrak frame video di perangkat Anda...`);
+    setProgress(20, `<i class="fa-solid fa-circle-notch fa-spin"></i> Memproses video Anda...`);
     let frameDataUrls;
     let frameTimes;
     const duration = getVideoDurationS() || 15; // durasi video = jam visual yang dipakai AI
@@ -71,12 +71,12 @@ async function initiateCommercialGeneration() {
         }
     } catch (err) {
         statusBox.classList.add('hidden');
-        showToast('Gagal mengekstrak frame: ' + err.message, 'error');
+        showToast('Gagal memproses video: ' + err.message, 'error');
         return;
     }
 
     // Tahap 2: analisa AI di Worker (Gemini utama, fallback AIVene qwen3.8-flash)
-    setProgress(55, `<i class="fa-solid fa-circle-notch fa-spin"></i> AI menganalisa ${frameDataUrls.length} frame & menyusun naskah emosi...`);
+    setProgress(55, `<i class="fa-solid fa-circle-notch fa-spin"></i> Menganalisis video & menyusun naskah voice over...`);
     let resp;
     try {
         resp = await apiFetch('/api/analyze', {
@@ -98,17 +98,17 @@ async function initiateCommercialGeneration() {
         if (err.handled) return;
         if (err.status === 402) {
             const d = err.data || {};
-            showToast(`Saldo tidak cukup di server (Rp ${(d.have || 0).toLocaleString('id-ID')}). Top up QRIS dulu ya.`, 'error');
+            showToast(`Saldo Anda belum mencukupi (Rp ${(d.have || 0).toLocaleString('id-ID')}). Silakan isi saldo QRIS terlebih dahulu.`, 'error');
             openTopUpQrisModal(modelPrice);
         } else if (err.status === 502) {
-            showToast('Server AI gagal memproses (Gemini & AIVene). Coba lagi sebentar.', 'error');
+            showToast('Layanan Voice Over sedang sibuk. Silakan coba sesaat lagi.', 'error');
         } else {
             showToast('Analisa gagal: ' + err.message, 'error');
         }
         return;
     }
 
-    setProgress(90, `<i class="fa-solid fa-circle-notch fa-spin"></i> Menyusun timeline adegan...`);
+    setProgress(90, `<i class="fa-solid fa-circle-notch fa-spin"></i> Menyelaraskan naskah dengan adegan video...`);
     const r = resp.result;
     const resolvedModelLabel = resp.modelLabel || modelName; // label dari server (otoritatif)
     const affLink = document.getElementById('affiliateLinkInput').value;
@@ -149,14 +149,14 @@ async function initiateCommercialGeneration() {
     };
     saveRecordToHistory(newRecord);
 
-    setProgress(100, `<i class="fa-solid fa-circle-check text-emerald-400"></i> Voice Over Berpola Emosi & Subtitle Selesai!`);
-    showToast('Voice Over berpola emosi berhasil dibuat dan disimpan ke Riwayat!', 'success');
+    setProgress(100, `<i class="fa-solid fa-circle-check text-emerald-400"></i> Voice Over & Subtitle Berhasil Dibuat!`);
+    showToast('Voice Over berhasil dibuat dan tersimpan di Riwayat!', 'success');
     setTimeout(() => statusBox.classList.add('hidden'), 3000);
 
     // Prerender audio Gemini TTS untuk semua adegan di latar belakang (agar Putar/Unduh WebM langsung sinkron).
     if (typeof invalidateSceneAudios === 'function') invalidateSceneAudios();
     if (typeof ensureSceneAudios === 'function') {
-        showToast('Menyiapkan audio tiap adegan…', 'info');
+        showToast('Menyiapkan audio adegan…', 'info');
         ensureSceneAudios().then(() => {
             paintSceneDurations();
         }).catch(() => { /* audio diulang lagi saat Putar/Unduh ditekan */ });

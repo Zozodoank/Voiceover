@@ -120,7 +120,7 @@ function onQrisAmountInput() {
         setQrisAmountHint('');
         document.getElementById('qrisPollingStatusText').innerText = activeOrder.qrUrl
             ? 'Nominal terkunci. Scan QRIS lalu bayar - verifikasi otomatis.'
-            : 'Menunggu webhook MacroDroid...';
+            : 'Menunggu pembayaran Anda...';
     }
 }
 
@@ -134,7 +134,7 @@ function setQrisDynamic(isDynamic) {
     if (isDynamic) {
         warning.innerHTML = '<i class="fa-solid fa-circle-check mr-1"></i>Nominal <strong>sudah terkunci</strong> di QRIS - cukup scan dan bayar.';
     } else if (qrisPanelStep === 'qr') {
-        warning.innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1"></i><strong>Penting:</strong> Transfer <strong>persis sampai 2 digit terakhir</strong> agar MacroDroid otomatis memverifikasi!';
+        warning.innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1"></i><strong>Penting:</strong> Transfer <strong>tepat sesuai nominal hingga digit terakhir</strong> agar saldo terisi otomatis!';
     } else {
         warning.innerHTML = '<i class="fa-solid fa-lock mr-1"></i>Nominal deposit akan dikunci otomatis di QRIS setelah kamu menekan <strong>Bayar</strong>.';
     }
@@ -199,7 +199,7 @@ function renderQrisReveal(data) {
     setQrisDynamic(!!data.qrUrl);
     document.getElementById('qrisPollingStatusText').innerText = data.qrUrl
         ? 'Nominal terkunci. Scan QRIS lalu bayar - verifikasi otomatis.'
-        : 'Menunggu webhook MacroDroid...';
+        : 'Menunggu pembayaran Anda...';
     if (data.qrUrl) startQrisCountdown(data.expiresAt);
 
     const panel = document.getElementById('qrisQrPanel');
@@ -217,7 +217,7 @@ function startQrisPolling() {
                     userBalance = Number(st.balance) || userBalance;
                     userUnlimited = !!st.unlimited;
                     refreshBalanceBadge();
-                    document.getElementById('qrisPollingStatusText').innerText = "Pembayaran Berhasil Diverifikasi MacroDroid!";
+                    document.getElementById('qrisPollingStatusText').innerText = "Pembayaran Berhasil Diterima!";
                     showToast(`Saldo bertambah Rp ${activeOrder.baseAmount.toLocaleString('id-ID')}!`, 'success');
                     stopQrisPolling();
                     stopQrisCountdown();
@@ -323,10 +323,10 @@ function downloadQrisSvg() {
 }
 
 // Simulasi HANYA untuk uji UI lokal (?dev=1): mengubah tampilan tanpa menyentuh saldo server.
-function simulateMacrodroidWebhook() {
+function simulatePaymentSuccess() {
     if (!activeOrder) return;
-    showToast('Simulasi UI saja - saldo server tidak berubah. Gunakan webhook asli.', 'info');
-    document.getElementById('qrisPollingStatusText').innerText = "Pembayaran Berhasil Diverifikasi MacroDroid!";
+    showToast('Simulasi pembayaran berhasil.', 'info');
+    document.getElementById('qrisPollingStatusText').innerText = "Pembayaran Berhasil Diterima!";
     setTimeout(() => closeQrisModal(), 1500);
 }
 
@@ -334,6 +334,6 @@ function simulateMacrodroidWebhook() {
 if (location.search.includes('dev=1')) {
     document.addEventListener('DOMContentLoaded', () => {
         const slot = document.getElementById('qrisDevSlot');
-        if (slot) slot.innerHTML = '<button onclick="simulateMacrodroidWebhook()" class="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold transition"><i class="fa-solid fa-bolt"></i> Tes Sinyal (dev)</button>';
+        if (slot) slot.innerHTML = '<button onclick="simulatePaymentSuccess()" class="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold transition"><i class="fa-solid fa-bolt"></i> Simulasi Bayar</button>';
     });
 }

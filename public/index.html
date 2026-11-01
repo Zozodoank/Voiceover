@@ -36,7 +36,7 @@
     <main class="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6">
         <section class="text-center pt-10 sm:pt-16 pb-10 space-y-4">
             <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-500/15 border border-brand-500/30 text-brand-300 text-[11px] font-bold uppercase tracking-wider">
-                <i class="fa-solid fa-bolt"></i> Didukung Gemini AI + Fallback Qwen
+                <i class="fa-solid fa-bolt"></i> Teknologi AI Voice Over Cerdas & Alami
             </span>
             <h1 class="text-3xl sm:text-5xl font-extrabold leading-tight tracking-tight">
                 Video Produk Biasa &rarr; <span class="bg-gradient-to-r from-brand-400 to-purple-400 bg-clip-text text-transparent">VO Viral Beremosi</span>
@@ -56,7 +56,7 @@
             <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
                 <div class="w-10 h-10 rounded-xl bg-brand-500/15 flex items-center justify-center"><i class="fa-solid fa-film text-brand-400"></i></div>
                 <h3 class="font-bold text-sm">Analisa Video AI</h3>
-                <p class="text-xs text-slate-400 leading-relaxed">Frame video diekstrak di perangkat Anda (hemat kuota), lalu dianalisa Gemini dengan fallback Qwen3.8-Flash.</p>
+                <p class="text-xs text-slate-400 leading-relaxed">Video dianalisis secara instan dan efisien untuk menghasilkan rekomendasi naskah yang paling pas dan memikat pembeli.</p>
             </div>
             <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
                 <div class="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center"><i class="fa-solid fa-face-smile text-amber-400"></i></div>
@@ -66,7 +66,7 @@
             <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
                 <div class="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center"><i class="fa-solid fa-qrcode text-emerald-400"></i></div>
                 <h3 class="font-bold text-sm">QRIS Auto-Verifikasi</h3>
-                <p class="text-xs text-slate-400 leading-relaxed">Top up saldo dengan kode unik 2 digit. Transfer pas &rarr; MacroDroid verifikasi otomatis, saldo langsung masuk.</p>
+                <p class="text-xs text-slate-400 leading-relaxed">Isi saldo instan lewat QRIS dengan verifikasi otomatis. Saldo langsung masuk seketika dan siap digunakan.</p>
             </div>
         </section>
 
@@ -88,7 +88,7 @@
                     <p class="text-2xl font-black text-emerald-400" id="landingPrice-tier-tinggi">Rp 1.800<span class="text-xs font-medium text-slate-500">/VO</span></p>
                 </div>
             </div>
-            <p class="text-[11px] text-slate-500">Riwayat proyek tersimpan privat per akun Google Anda &mdash; multi-tenant di perangkat ini.</p>
+            <p class="text-[11px] text-slate-500">Riwayat proyek dan saldo tersimpan aman serta privat khusus untuk akun Google Anda.</p>
         </section>
 
         <!-- LOGIN -->
@@ -99,7 +99,7 @@
                 </div>
                 <div>
                     <h2 class="font-extrabold text-base">Masuk untuk Mulai</h2>
-                    <p class="text-xs text-slate-400 mt-1">Login dengan akun Google &mdash; tanpa password, data Anda terpisah per akun.</p>
+                    <p class="text-xs text-slate-400 mt-1">Masuk dengan akun Google secara praktis &mdash; tanpa password rumit, aman dan terjaga.</p>
                 </div>
                 <div id="googleBtnContainer" class="flex justify-center min-h-[44px] items-center">
                     <p id="loginHint" class="text-[11px] text-slate-500"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Menyiapkan tombol Google&hellip;</p>
@@ -134,7 +134,7 @@
             } catch (e) {}
             const hint = document.getElementById('loginHint');
             if (!clientId) {
-                if (hint) hint.innerHTML = 'Konfigurasi OAuth belum tersedia. Set <code>GOOGLE_CLIENT_ID</code> pada Worker (lihat README).';
+                if (hint) hint.innerHTML = 'Layanan login sedang disiapkan. Silakan coba beberapa saat lagi.';
                 return;
             }
             // GIS dimuat async; tunggu global google siap (maks ~5 dtk) sebelum merender tombol.
@@ -147,7 +147,7 @@
                 })();
             });
             if (!gisReady) {
-                if (hint) hint.innerHTML = 'Pustaka Google Sign-In gagal dimuat &mdash; butuh koneksi internet ke <code>accounts.google.com</code>. Muat ulang halaman.';
+                if (hint) hint.innerHTML = 'Tombol Google Sign-In gagal dimuat. Pastikan koneksi internet stabil lalu muat ulang halaman.';
                 return;
             }
             google.accounts.id.initialize({
@@ -162,7 +162,7 @@
                         });
                         if (r.ok) { location.href = 'app.html'; return; }
                         const d = await r.json().catch(() => ({}));
-                        if (hint) hint.innerHTML = 'Login gagal: ' + (d.detail || d.error || 'tidak diketahui');
+                        if (hint) hint.innerHTML = 'Gagal masuk akun. Silakan coba kembali sesaat lagi.';
                     } catch (e) {
                         if (hint) hint.textContent = 'Server tidak terjangkau.';
                     }

@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VO Studio Pro - Commercial AI Affiliate &amp; Voice Over Suite</title>
+    <title>Studio Pengisi Suara Video - Voice Over AI &amp; Naskah Otomatis</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <!-- Google Identity Services (login OAuth tanpa client secret) -->
+    <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script>
         tailwind.config = {
@@ -99,11 +99,11 @@
                     <i class="fa-solid fa-lock text-white text-lg"></i>
                 </div>
                 <h2 class="text-lg font-bold text-white" id="authModalTitle">Masuk ke Studio</h2>
-                <p class="text-xs text-slate-400">Login Google wajib untuk analisa AI multi-tenant &mdash; riwayat &amp; saldo tersimpan aman per akun</p>
+                <p class="text-xs text-slate-400">Masuk dengan akun Google agar riwayat kreasi dan saldo Anda tersimpan aman</p>
             </div>
             <!-- Tombol resmi Google dirender oleh GIS ke dalam container ini (lihat js/auth.js) -->
             <div id="googleBtnContainer" class="flex justify-center py-1"></div>
-            <p class="text-[11px] text-slate-500 text-center">Dengan masuk, data proyek Anda disimpan terpisah di perangkat ini per akun Google.</p>
+            <p class="text-[11px] text-slate-500 text-center">Seluruh proyek dan saldo Anda terjaga kerahasiaan dan keamanannya.</p>
         </div>
     </div>
 
@@ -115,7 +115,7 @@
                     <span class="w-8 h-8 rounded-lg bg-rose-600 text-white flex items-center justify-center font-bold text-xs">QRIS</span>
                     <div>
                         <h3 class="text-sm font-bold text-white">Pembayaran QRIS Otomatis</h3>
-                        <p class="text-[11px] text-slate-400">Verifikasi Real-Time via MacroDroid</p>
+                        <p class="text-[11px] text-slate-400">Verifikasi Otomatis &amp; Saldo Langsung Masuk</p>
                     </div>
                 </div>
                 <button onclick="closeQrisModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
@@ -125,7 +125,7 @@
             <div id="qrisQrPlaceholder" class="hidden flex flex-col items-center justify-center gap-2 h-56 rounded-2xl border-2 border-dashed border-slate-700 bg-slate-950 text-center px-4">
                 <i class="fa-solid fa-qrcode text-4xl text-slate-600"></i>
                 <p class="text-[11px] font-bold text-slate-300">QRIS muncul setelah kamu menekan <span class="text-emerald-400">Bayar</span></p>
-                <p class="text-[10px] text-slate-500">Isi nominal deposit dulu - 2 digit kode verifikasi ditambahkan otomatis.</p>
+                <p class="text-[10px] text-slate-500">Masukkan nominal saldo yang diinginkan lalu tekan Bayar.</p>
             </div>
 
             <!-- Langkah 2: QRIS dinamis (/api/payment/qr/:orderId) atau QRIS statis sebagai fallback -->
@@ -180,13 +180,13 @@
                     </div>
                 </div>
                 <p id="qrisWarningText" class="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2 leading-relaxed">
-                    <i class="fa-solid fa-lock mr-1"></i>Nominal deposit akan dikunci otomatis di QRIS setelah kamu menekan <strong>Bayar</strong>.
+                    <i class="fa-solid fa-lock mr-1"></i>Nominal pembayaran akan otomatis tercantum di QRIS setelah Anda menekan <strong>Bayar</strong>.
                 </p>
             </div>
             <div class="flex items-center justify-between gap-2">
                 <div class="flex items-center gap-2 text-xs text-slate-300">
                     <i class="fa-solid fa-satellite-dish fa-fade text-brand-400"></i>
-                    <span id="qrisPollingStatusText">Menunggu webhook MacroDroid...</span>
+                    <span id="qrisPollingStatusText">Menunggu pembayaran Anda...</span>
                 </div>
                 <!-- Tombol "Tes Sinyal" hanya disuntikkan JS saat mode dev (?dev=1) -->
                 <span id="qrisDevSlot"></span>
@@ -418,7 +418,7 @@
 
                     <p class="text-[11px] text-slate-400 mb-4 flex items-start gap-1.5">
                         <i class="fa-solid fa-arrows-left-right text-brand-400 mt-0.5 shrink-0"></i>
-                        <span>Voice over mengikuti timeline video (1x). Kalimat yang kepanjangan dipercepat halus agar tetap di adegannya.</span>
+                        <span>Voice over diselaraskan secara presisi dengan alur video dan durasi tiap adegan.</span>
                     </p>
 
                     <div class="relative rounded-2xl overflow-hidden bg-black aspect-[9/16] h-[560px] w-auto mx-auto flex items-center justify-center border border-slate-800 shadow-inner">
@@ -530,7 +530,7 @@
                         <i class="fa-solid fa-clock-rotate-left text-brand-400"></i>
                         <span>Riwayat Proyek Voice Over &amp; Affiliate</span>
                     </h2>
-                    <p class="text-xs text-slate-400 mt-0.5">Daftar seluruh video dan naskah berpolanya emosi yang pernah Anda buat</p>
+                    <p class="text-xs text-slate-400 mt-0.5">Daftar seluruh video dan naskah voice over yang pernah Anda buat</p>
                 </div>
                 <button onclick="clearHistoryRecords()" class="px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-semibold transition flex items-center gap-1.5">
                     <i class="fa-solid fa-trash-can"></i> Hapus Semua

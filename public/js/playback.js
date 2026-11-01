@@ -19,9 +19,9 @@ function togglePlayMergedVideo() {
     isPlayingMerged = true;
     btnText.innerText = 'Jeda';
     icon.className = 'fa-solid fa-pause';
-    showToast('Memutar video beserta voice over emosi & subtitle (tersinkron)...', 'info');
+    showToast('Memutar video dengan voice over dan subtitle...', 'info');
     startMergedPlayback().catch((e) => {
-        showToast('Putar gagal: ' + (e.message || e), 'error');
+        showToast('Gagal memutar video. Silakan coba lagi.', 'error');
         resetPlayBtn();
     });
 }

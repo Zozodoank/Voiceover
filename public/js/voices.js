@@ -93,7 +93,7 @@ async function previewVoice(name, btn, text, emotion, tier) {
         await _previewAudio.play();
         showToast('Memutar contoh suara ' + name + '…', 'success');
     } catch (e) {
-        showToast('Pratinjau error: ' + (e.message || e), 'error');
+        showToast('Gagal memutar contoh suara. Silakan coba lagi.', 'error');
     } finally {
         if (btn) btn.disabled = false;
     }

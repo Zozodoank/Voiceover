@@ -8,7 +8,7 @@ async function apiFetch(path, options) {
     const res = await fetch(path, opts);
     if (res.status === 401) {
         // Sesi hilang/kadaluarsa -> kembali ke landing untuk login Google
-        showToast('Sesi berakhir, silakan login ulang.', 'error');
+        showToast('Sesi Anda telah berakhir, silakan masuk kembali.', 'error');
         setTimeout(() => { location.href = 'index.html'; }, 1200);
         const err = new Error('unauthorized');
         err.status = 401;
@@ -18,7 +18,7 @@ async function apiFetch(path, options) {
     let data = null;
     try { data = await res.json(); } catch (e) { /* respons non-JSON */ }
     if (!res.ok) {
-        const err = new Error((data && (data.message || data.error)) || 'HTTP ' + res.status);
+        const err = new Error((data && (data.message || data.error)) || 'Terjadi kendala pada server (' + res.status + ')');
         err.status = res.status;
         err.data = data;
         throw err;

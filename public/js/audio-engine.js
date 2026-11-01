@@ -504,9 +504,9 @@ async function exportMergedVideoWebM() {
     const label = document.getElementById('exportBtnLabel');
     if (btn && btn.disabled) return; // cegah klik ganda
     if (!generatedScenesData || !generatedScenesData.length) { showToast('Buat Voice Over dulu sebelum mengunduh.', 'error'); return; }
-    if (!window.MediaRecorder) { showToast('Browser tidak mendukung MediaRecorder. Pakai unduh .SRT.', 'error'); return; }
+    if (!window.MediaRecorder) { showToast('Browser ini tidak mendukung pembuatan video langsung. Silakan gunakan unduh file .SRT.', 'error'); return; }
     if (!navigator.mediaDevices || !HTMLCanvasElement.prototype.captureStream) {
-        showToast('Ekspor video tidak didukung di browser ini. Pakai unduh .SRT.', 'error'); return;
+        showToast('Pembuatan video tidak didukung pada browser ini. Silakan gunakan opsi unduh .SRT.', 'error'); return;
     }
 
     const setBusy = (busy, text) => {
@@ -640,7 +640,7 @@ async function exportMergedVideoWebM() {
             try {
                 drawFrame(cctx, comp, sceneIdx, sub);
             } catch (err) {
-                if (err && err.name === 'SecurityError') { finish(); showToast('Video lintas-origin menodai kanvas (CORS). Ekspor dibatalkan; pakai .SRT.', 'error'); return; }
+                if (err && err.name === 'SecurityError') { finish(); showToast('Format video tidak didukung untuk penggabungan langsung. Silakan gunakan opsi unduh .SRT.', 'error'); return; }
             }
             if (manualFrames) { try { vTrack.requestFrame(); } catch (e) { /* ignore */ } }
             _rafId = requestAnimationFrame(draw);
@@ -649,7 +649,7 @@ async function exportMergedVideoWebM() {
         await done;
         const blob = new Blob(chunks, { type: 'video/webm' });
         if (!blob.size) {
-            showToast('Ekspor menghasilkan file kosong (audio VO tidak tersedia). Coba unduh .SRT saja.', 'error');
+            showToast('Gagal memproses video gabungan. Silakan unduh naskah .SRT.', 'error');
             return;
         }
         const url = URL.createObjectURL(blob);
@@ -663,7 +663,7 @@ async function exportMergedVideoWebM() {
         if (msg.indexOf('audio_missing:') === 0) {
             showToast('Suara adegan ' + msg.split(':')[1] + ' gagal dibuat. Tekan Unduh sekali lagi untuk mengulang.', 'error');
         } else {
-            showToast('Ekspor gagal: ' + msg + '. Coba unduh .SRT.', 'error');
+            showToast('Pembuatan video belum berhasil. Silakan coba lagi atau unduh .SRT.', 'error');
         }
     } finally {
         resetPlayBtn();

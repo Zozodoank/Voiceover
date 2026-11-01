@@ -135,6 +135,10 @@ node .wrangler/verify-srt-unchanged.mjs     # format .SRT tetap, jalur berurutan
 node .wrangler/verify-vo-visual-app.mjs     # end-to-end browser: upload -> frameTimes -> putar -> ekspor WebM
                                            # butuh `npx wrangler dev`; tambah --headful agar ekspor WebM
                                            # benar-benar terekam (encoder headless sering 0 byte)
+node .wrangler/e2e-app.mjs                 # browser dengan sesi asli + TTS sungguhan (memakai kuota AI)
+                                           # pakai E2E_BASE=http://127.0.0.1:8787 bila dev server bukan di 8788;
+                                           # tambah E2E_UNIQUE=1 agar cache KV TTS meleset dan provider
+                                           # benar-benar dipanggil (tanpa itu bisa jadi cache hit < 2 dtk)
 ```
 
 ## QRIS + MacroDroid

@@ -13,7 +13,7 @@ async function renderGoogleButton() {
     const container = document.getElementById('googleBtnContainer');
     if (!container) return;
     if (!window.google || !google.accounts) {
-        container.innerHTML = '<p class="text-[11px] text-rose-400">Skrip Google Identity Services belum termuat (butuh koneksi internet).</p>';
+        container.innerHTML = '<p class="text-[11px] text-rose-400">Layanan login Google belum termuat. Periksa koneksi internet Anda.</p>';
         return;
     }
     let clientId = '';
@@ -22,7 +22,7 @@ async function renderGoogleButton() {
         clientId = (await r.json()).clientId || '';
     } catch (e) { /* server offline */ }
     if (!clientId) {
-        container.innerHTML = '<p class="text-[11px] text-amber-400">GOOGLE_CLIENT_ID belum dikonfigurasi pada Worker (lihat README).</p>';
+        container.innerHTML = '<p class="text-[11px] text-amber-400">Layanan masuk sedang dalam pemeliharaan. Silakan coba kembali nanti.</p>';
         return;
     }
     google.accounts.id.initialize({
@@ -46,7 +46,7 @@ async function handleGoogleCredential(resp) {
         });
         if (!r.ok) {
             const d = await r.json().catch(() => ({}));
-            showToast('Login gagal: ' + (d.detail || d.error || r.status), 'error');
+            showToast('Gagal masuk akun. Silakan coba beberapa saat lagi.', 'error');
             return;
         }
         await loadSession();
@@ -57,7 +57,7 @@ async function handleGoogleCredential(resp) {
         closeAuthModal();
         showToast(`Berhasil masuk sebagai ${CURRENT_USER.email}`, 'success');
     } catch (e) {
-        showToast('Server tidak terjangkau saat login.', 'error');
+        showToast('Koneksi terganggu. Silakan periksa jaringan Anda.', 'error');
     }
 }
 
