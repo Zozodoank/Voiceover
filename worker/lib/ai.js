@@ -3,8 +3,8 @@
 
 import { ALLOWED_EMOTIONS } from './tts.js';
 
-const AI_TIMEOUT_MS = 30000;      // per panggilan model (model *-lite bisa lambat utk banyak frame)
-const AI_TOTAL_BUDGET_MS = 50000; // anggaran total lintas provider agar request tidak menggantung
+const AI_TIMEOUT_MS = 25000;      // per panggilan model (Cloudflare free tier max 30 dtk CPU)
+const AI_TOTAL_BUDGET_MS = 55000; // anggaran total lintas provider - Cloudflare subrequest 30 dtk masing-masing
 
 /** Aturan CTA per platform tujuan - menentukan frasa keranjang yang boleh/tidak boleh. */
 const PLATFORM_CTA = {
@@ -85,9 +85,24 @@ function splitDataUrl(dataUrl) {
 
 function extractJson(text) {
     if (!text) return null;
-    try { return JSON.parse(text); } catch (e) { /* coba cari blok JSON */ }
-    const m = text.match(/\{[\s\S]*\}/);
-    if (m) { try { return JSON.parse(m[0]); } catch (e) { return null; } }
+    // Coba parse langsung: Gemini kadang mengembalikan array JSON [{...}] bukan object {...}
+    try {
+        const parsed = JSON.parse(text);
+        // Jika array (mis. [{research,scenes,...}]), ambil elemen pertama yang berbentuk object
+        if (Array.isArray(parsed)) return (parsed.find(x => x && typeof x === 'object' && !Array.isArray(x))) || null;
+        return parsed;
+    } catch (e) { /* coba ekstrak blok */ }
+    // Coba cari blok object {...}
+    const mObj = text.match(/\{[\s\S]*\}/);
+    if (mObj) { try { return JSON.parse(mObj[0]); } catch (e) { /* lanjut */ } }
+    // Coba cari blok array [{...}] dan ambil elemen pertama
+    const mArr = text.match(/\[[\s\S]*\]/);
+    if (mArr) {
+        try {
+            const arr = JSON.parse(mArr[0]);
+            if (Array.isArray(arr)) return (arr.find(x => x && typeof x === 'object' && !Array.isArray(x))) || null;
+        } catch (e) { /* gagal */ }
+    }
     return null;
 }
 
@@ -207,12 +222,19 @@ async function callGemini(env, model, frames, prompt, timeoutMs) {
         signal: AbortSignal.timeout(timeoutMs || AI_TIMEOUT_MS),
     });
     if (!res.ok) {
-        const err = new Error(`Gemini HTTP ${res.status}`);
+        let errMsg = '';
+        try { const j = await res.json(); errMsg = j?.error?.message || ''; } catch (ex) { /* non-json */ }
+        const err = new Error(`Gemini HTTP ${res.status}${errMsg ? ': ' + errMsg.slice(0, 120) : ''}`);
         err.status = res.status;
         throw err;
     }
     const data = await res.json();
-    const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+    const candidate = data?.candidates?.[0];
+    const finishReason = candidate?.finishReason || '';
+    const text = candidate?.content?.parts?.map(p => p.text || '').join('') || '';
+    // Log diagnostik (tidak bocor ke browser): berguna pantau model mana yang melayani analisa
+    console.log(`AI analyze model=${model} finish=${finishReason} tokens=${data?.usageMetadata?.totalTokenCount||0} textLen=${text.length}`);
+    if (finishReason === 'MAX_TOKENS') console.warn(`AI model=${model} hit MAX_TOKENS - JSON mungkin terpotong`);
     return extractJson(text);
 }
 
