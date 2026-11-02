@@ -676,6 +676,7 @@ async function exportMergedVideoWebM() {
         setTimeout(() => { try { document.body.removeChild(a); } catch (e) { /* ignore */ } URL.revokeObjectURL(url); }, 4000);
         showToast('Video (VO + subtitle) berhasil diunduh!', 'success');
     } catch (e) {
+        console.error('Export video error:', e);
         showToast('Pembuatan video belum berhasil. Silakan coba lagi atau unduh .SRT.', 'error');
     } finally {
         resetPlayBtn();
@@ -774,7 +775,9 @@ function drawSubtitle(cctx, comp, sub) {
 }
 
 function drawCover(cctx, el, w, h) {
-    const sw = el.videoWidth || el.width || w, sh = el.videoHeight || el.height || h;
+    const sw = el.videoWidth || el.width || 0;
+    const sh = el.videoHeight || el.height || 0;
+    if (sw <= 0 || sh <= 0) return;
     const scale = Math.max(w / sw, h / sh);
     const dw = sw * scale, dh = sh * scale;
     cctx.drawImage(el, (w - dw) / 2, (h - dh) / 2, dw, dh);

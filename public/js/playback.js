@@ -28,6 +28,7 @@ function togglePlayMergedVideo() {
     icon.className = 'fa-solid fa-pause';
     showToast('Memutar video dengan voice over dan subtitle...', 'info');
     startMergedPlayback().catch((e) => {
+        console.error('Play video error:', e);
         showToast('Gagal memutar video. Silakan coba lagi.', 'error');
         resetPlayBtn();
     });
