@@ -157,9 +157,20 @@ async function decodeAudioBlob(blob) {
     }
     const arrayBuffer = await blob.arrayBuffer();
     return new Promise((resolve, reject) => {
-        const p = ctx.decodeAudioData(arrayBuffer, resolve, reject);
-        if (p && typeof p.then === 'function') {
-            p.then(resolve, reject);
+        let settled = false;
+        const onSuccess = (buf) => {
+            if (!settled) { settled = true; resolve(buf); }
+        };
+        const onError = (err) => {
+            if (!settled) { settled = true; reject(err || new Error('Gagal memproses data audio')); }
+        };
+        try {
+            const p = ctx.decodeAudioData(arrayBuffer, onSuccess, onError);
+            if (p && typeof p.then === 'function') {
+                p.then(onSuccess).catch(onError);
+            }
+        } catch (e) {
+            onError(e);
         }
     });
 }
@@ -536,6 +547,12 @@ async function exportMergedVideoWebM() {
         if (label) label.innerText = busy ? (text || 'Merekam…') : 'Unduh';
     };
 
+    // Bangunkan AudioContext segera pada klik tombol pengguna
+    const ctx = audioCtx();
+    if (ctx && ctx.state === 'suspended') {
+        try { await ctx.resume(); } catch (e) { /* ignore */ }
+    }
+
     setBusy(true, 'Menyiapkan suara…');
     stopEverything();
     try {
@@ -544,29 +561,21 @@ async function exportMergedVideoWebM() {
         setBusy(true, 'Merekam…');
 
         const mimeType = pickWebmMime();
-        if (!mimeType) throw new Error('Format WebM tidak didukung browser.');
+        if (!mimeType) throw new Error('Format video tidak didukung browser.');
 
         // Kanvas kompositor
         const comp = document.createElement('canvas'); comp.width = EXPORT_W; comp.height = EXPORT_H;
         const cctx = comp.getContext('2d');
 
-        const ctx = audioCtx();
         const dest = ctx.createMediaStreamDestination();
         const myTok = ++_playToken; ctx._tok = myTok;
 
-        // Video track dari kanvas; audio track dari destination; gabung
-        // requestFrame() dipakai bila tersedia: stream dibuat beralaju 0 dan satu frame diminta tepat
-        // setelah kanvas selesai digambar, jadi isi rekaman SELALU frame terbaru. Timer kompositor
-        // tidak lagi menentukan isi frame - di sebagian lingkungan (browser headless, tab tersembunyi)
-        // timer itu berhenti sehingga rekaman membeku di satu gambar. Tanpa requestFrame() jatuh ke
-        // laju tetap seperti sebelumnya.
-        let stream = comp.captureStream(0);
-        let vTrack = stream.getVideoTracks()[0];
-        const manualFrames = !!(vTrack && typeof vTrack.requestFrame === 'function');
-        if (!manualFrames) {
-            stream.getVideoTracks().forEach(t => { try { t.stop(); } catch (e) { /* ignore */ } });
+        // Stream video stabil 30fps dari kanvas + stream audio dari AudioContext
+        let stream;
+        try {
             stream = comp.captureStream(EXPORT_FPS);
-            vTrack = stream.getVideoTracks()[0];
+        } catch (e) {
+            stream = comp.captureStream();
         }
         dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
 
@@ -622,7 +631,6 @@ async function exportMergedVideoWebM() {
         // Render frame awal hitam agar stream kanvas segera memiliki data frame valid
         cctx.fillStyle = '#000';
         cctx.fillRect(0, 0, comp.width, comp.height);
-        if (manualFrames) { try { vTrack.requestFrame(); } catch (e) { /* ignore */ } }
 
         // Rekaman HARUS hidup dulu, baru audio dijadwalkan: kalau dibalik, awal VO terpotong
         // dan seluruh video bergeser (subtitle tampak telat).
@@ -669,22 +677,22 @@ async function exportMergedVideoWebM() {
             } catch (err) {
                 if (err && err.name === 'SecurityError') { finish(); showToast('Format video tidak didukung untuk penggabungan langsung. Silakan gunakan opsi unduh .SRT.', 'error'); return; }
             }
-            if (manualFrames) { try { vTrack.requestFrame(); } catch (e) { /* ignore */ } }
             _rafId = requestAnimationFrame(draw);
         })();
 
         await done;
-        const blob = new Blob(chunks, { type: 'video/webm' });
+        const blob = new Blob(chunks, { type: mimeType });
         if (!blob.size) {
             showToast('Gagal memproses video gabungan. Silakan unduh naskah .SRT.', 'error');
             return;
         }
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = `VO_${name}_${Date.now()}.webm`; a.style.display = 'none';
+        const ext = mimeType.indexOf('mp4') !== -1 ? 'mp4' : 'webm';
+        a.href = url; a.download = `VO_${name}_${Date.now()}.${ext}`; a.style.display = 'none';
         document.body.appendChild(a); a.click();
         setTimeout(() => { try { document.body.removeChild(a); } catch (e) { /* ignore */ } URL.revokeObjectURL(url); }, 4000);
-        showToast('Video WebM (VO + subtitle) berhasil diunduh!', 'success');
+        showToast('Video (VO + subtitle) berhasil diunduh!', 'success');
     } catch (e) {
         const msg = String((e && e.message) || e);
         if (msg.indexOf('audio_missing:') === 0) {
@@ -700,7 +708,14 @@ async function exportMergedVideoWebM() {
 }
 
 function pickWebmMime() {
-    const cands = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9', 'video/webm'];
+    const cands = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm;codecs=vp9',
+        'video/webm',
+        'video/mp4;codecs=avc1,mp4a.40.2',
+        'video/mp4'
+    ];
     for (const m of cands) { if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m; }
     return '';
 }

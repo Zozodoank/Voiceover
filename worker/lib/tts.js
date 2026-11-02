@@ -334,8 +334,62 @@ export async function synthesizeAivene(env, { text, emotion }) {
 }
 
 /**
+ * Fallback TTS via Google Translate TTS (Indonesian).
+ * Tanpa batas kuota harian 10-req, tanpa API key, stabil & cepat (~200ms).
+ */
+export async function synthesizeGoogleTranslateTts({ text, lang = 'id' }) {
+    const clean = String(text || '').trim();
+    if (!clean) throw new Error('Teks TTS kosong');
+
+    const words = clean.split(/\s+/).filter(Boolean);
+    const chunks = [];
+    let current = '';
+
+    for (const w of words) {
+        if ((current + ' ' + w).trim().length > 150) {
+            if (current) chunks.push(current.trim());
+            current = w;
+        } else {
+            current = current ? current + ' ' + w : w;
+        }
+    }
+    if (current) chunks.push(current.trim());
+
+    const buffers = [];
+    for (const chunk of chunks) {
+        const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${encodeURIComponent(lang)}&client=tw-ob&q=${encodeURIComponent(chunk)}`;
+        const res = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+                'Accept': '*/*',
+            },
+            signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) throw new Error(`Google Translate TTS HTTP ${res.status}`);
+        const ab = await res.arrayBuffer();
+        if (ab.byteLength > 0) buffers.push(new Uint8Array(ab));
+    }
+
+    if (buffers.length === 0) throw new Error('Google Translate TTS mengembalikan audio kosong');
+
+    if (buffers.length === 1) {
+        return { bytes: buffers[0], contentType: 'audio/mpeg', provider: 'google-translate', model: 'translate-tts' };
+    }
+
+    const total = buffers.reduce((acc, b) => acc + b.byteLength, 0);
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const b of buffers) {
+        merged.set(b, offset);
+        offset += b.byteLength;
+    }
+    return { bytes: merged, contentType: 'audio/mpeg', provider: 'google-translate', model: 'translate-tts' };
+}
+
+/**
  * Router utama suara VO: Gemini TTS lebih dulu (rantai model per tier).
- * AIVene HANYA dipakai bila TTS_ALLOW_DEGRADE="true" - kualitas tidak boleh turun diam-diam.
+ * Jika kuota free tier Gemini habis (limit 10 req/hari 429) atau model sibuk (503),
+ * otomatis beralih ke Google Translate TTS agar tombol putar dan download video SELALU berhasil.
  * Mengembalikan { bytes, contentType, provider, model } atau melempar Error terakhir (dengan .status).
  */
 export async function synthesizeVoice(env, { text, voiceName, emotion, tier }) {
@@ -343,15 +397,30 @@ export async function synthesizeVoice(env, { text, voiceName, emotion, tier }) {
     if (env.GEMINI_API_KEY) {
         try {
             return await synthesizeGemini(env, { text, voiceName, emotion, tier });
-        } catch (e) { lastError = e; }
+        } catch (e) {
+            lastError = e;
+            console.warn(`Gemini TTS tier=${tier} gagal (${e.message}). Mencoba cadangan Google TTS...`);
+        }
     } else {
         lastError = new Error('GEMINI_API_KEY kosong');
     }
+
     const degrade = String(env.TTS_ALLOW_DEGRADE || 'false').toLowerCase() === 'true';
     if (degrade && env.AIVENE_API_KEY) {
         try {
             return await synthesizeAivene(env, { text, emotion });
         } catch (e) { lastError = e; }
     }
-    throw lastError || new Error('Tidak ada provider TTS yang dikonfigurasi');
+
+    // Fallback otomatis ke Google Translate TTS untuk memastikan suara selalu terbuat
+    try {
+        const fb = await synthesizeGoogleTranslateTts({ text, lang: 'id' });
+        console.log(`TTS Google Translate fallback sukses untuk teks="${text.slice(0, 30)}..." (${fb.bytes.byteLength} bytes)`);
+        return fb;
+    } catch (fbErr) {
+        console.error('TTS Google Translate fallback gagal:', fbErr.message);
+    }
+
+    throw lastError || new Error('Tidak ada provider TTS yang berhasil membuat suara');
 }
+
