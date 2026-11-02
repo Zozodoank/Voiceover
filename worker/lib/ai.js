@@ -83,26 +83,51 @@ function splitDataUrl(dataUrl) {
     return { mimeType: m[1], data: m[2] };
 }
 
-function extractJson(text) {
+export function extractJson(text) {
     if (!text) return null;
-    // Coba parse langsung: Gemini kadang mengembalikan array JSON [{...}] bukan object {...}
-    try {
-        const parsed = JSON.parse(text);
-        // Jika array (mis. [{research,scenes,...}]), ambil elemen pertama yang berbentuk object
-        if (Array.isArray(parsed)) return (parsed.find(x => x && typeof x === 'object' && !Array.isArray(x))) || null;
-        return parsed;
-    } catch (e) { /* coba ekstrak blok */ }
-    // Coba cari blok object {...}
-    const mObj = text.match(/\{[\s\S]*\}/);
-    if (mObj) { try { return JSON.parse(mObj[0]); } catch (e) { /* lanjut */ } }
-    // Coba cari blok array [{...}] dan ambil elemen pertama
-    const mArr = text.match(/\[[\s\S]*\]/);
-    if (mArr) {
+    let clean = String(text).trim();
+    // Hilangkan pembungkus markdown ```json ... ``` bila ada
+    clean = clean.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+
+    function tryParse(str) {
+        if (!str) return null;
         try {
-            const arr = JSON.parse(mArr[0]);
-            if (Array.isArray(arr)) return (arr.find(x => x && typeof x === 'object' && !Array.isArray(x))) || null;
-        } catch (e) { /* gagal */ }
+            const p = JSON.parse(str);
+            if (Array.isArray(p)) return (p.find(x => x && typeof x === 'object' && !Array.isArray(x))) || null;
+            return p;
+        } catch (e) {
+            // Coba perbaiki trailing commas umum mis. `, ]` atau `, }`
+            try {
+                const fixed = str
+                    .replace(/,\s*([\]}])/g, '$1')
+                    .replace(/[\u0000-\u001F\u007F-\u009F]/g, (c) => (c === '\n' || c === '\r' || c === '\t' ? c : ''));
+                const p = JSON.parse(fixed);
+                if (Array.isArray(p)) return (p.find(x => x && typeof x === 'object' && !Array.isArray(x))) || null;
+                return p;
+            } catch (ex) {
+                return null;
+            }
+        }
     }
+
+    // 1. Coba parse string bersih langsung
+    let result = tryParse(clean);
+    if (result) return result;
+
+    // 2. Coba cari blok object { ... }
+    const mObj = clean.match(/\{[\s\S]*\}/);
+    if (mObj) {
+        result = tryParse(mObj[0]);
+        if (result) return result;
+    }
+
+    // 3. Coba cari blok array [ ... ]
+    const mArr = clean.match(/\[[\s\S]*\]/);
+    if (mArr) {
+        result = tryParse(mArr[0]);
+        if (result) return result;
+    }
+
     return null;
 }
 
@@ -127,7 +152,7 @@ export function normalizeEmotion(raw) {
     return 'Antusias';
 }
 
-const MIN_SCENE_WINDOW_S = 1.2;   // di bawah ini adegan digabung ke tetangganya (satu kalimat per adegan)
+const MIN_SCENE_WINDOW_S = 0.8;   // batas minimum durasi satu adegan VO
 const SNAP_TOLERANCE_S = 0.75;    // jarak maksimum batas adegan digeser ke detik frame nyata
 
 /** Geser batas adegan ke detik frame terdekat agar potongan VO jatuh di perubahan visual. */
@@ -143,18 +168,39 @@ function snapToFrame(t, frameTimes) {
 
 /** Validasi bentuk hasil; kembalikan objek ternormalisasi atau null. */
 export function normalizeResult(raw, duration, options) {
-    if (!raw || !Array.isArray(raw.scenes) || raw.scenes.length < 2 || raw.scenes.length > 6) return null;
+    if (!raw) return null;
+    const data = (raw && Array.isArray(raw.scenes))
+        ? raw
+        : (raw.result && Array.isArray(raw.result.scenes))
+            ? raw.result
+            : (raw.data && Array.isArray(raw.data.scenes))
+                ? raw.data
+                : (raw.analysis && Array.isArray(raw.analysis.scenes))
+                    ? raw.analysis
+                    : raw;
+    if (!data || !Array.isArray(data.scenes) || data.scenes.length === 0) return null;
+
     const dur = Math.max(1, Number(duration) || 15);
     // frameTimes hanya dipakai untuk menggeser batas adegan; tidak wajib ada (data lama/fallback).
     const frameTimes = (options && Array.isArray(options.frameTimes))
         ? options.frameTimes.map(Number).filter(t => Number.isFinite(t) && t >= 0 && t <= dur)
         : [];
-    const items = raw.scenes.map((s) => ({
+    const items = data.scenes.map((s) => ({
         end: Number(s.end),
         emotion: normalizeEmotion(s.emotion),
         text: String(s.text || '').trim(),
     })).filter(s => s.text);
-    if (items.length < 2) return null;
+    if (items.length === 0) return null;
+
+    // Jika AI hanya menghasilkan 1 adegan, langsung gunakan rentang penuh durasi
+    if (items.length === 1) {
+        return {
+            research: String(data.research || '').trim(),
+            scenes: [{ start: 0, end: dur, emotion: items[0].emotion, text: items[0].text }],
+            caption: String(data.caption || '').trim(),
+            hashtags: String(data.hashtags || '').trim(),
+        };
+    }
 
     // Batas adegan: timestamp AI -> digeser ke frame nyata -> dipaksa naik & berurutan (kontigu).
     const cuts = [0];
@@ -165,7 +211,7 @@ export function normalizeResult(raw, duration, options) {
     }
     cuts.push(Math.round(dur * 10) / 10);
     for (let i = 1; i < cuts.length; i++) {
-        const min = i === cuts.length - 1 ? dur : cuts[i - 1] + MIN_SCENE_WINDOW_S;
+        const min = i === cuts.length - 1 ? dur : cuts[i - 1] + 0.4;
         cuts[i] = Math.min(dur, Math.max(min, cuts[i]));
     }
 
@@ -173,22 +219,24 @@ export function normalizeResult(raw, duration, options) {
     for (let i = 0; i < items.length; i++) {
         const prev = scenes[scenes.length - 1];
         const scene = { start: cuts[i], end: cuts[i + 1], emotion: items[i].emotion, text: items[i].text };
-        // Adegan yang terlalu pendek digabung ke adegan sebelumnya: satu kalimat per adegan.
-        if (prev && scene.end - scene.start < MIN_SCENE_WINDOW_S) {
+        // Adegan yang terlalu pendek (< 0.8 dtk) digabung ke adegan sebelumnya
+        if (prev && (scene.end - scene.start) < MIN_SCENE_WINDOW_S) {
             prev.end = scene.end;
             prev.text = (prev.text + ' ' + scene.text).trim();
             continue;
         }
         scenes.push(scene);
     }
-    if (scenes.length < 2) return null;
+    if (scenes.length === 0) {
+        scenes.push({ start: 0, end: dur, emotion: items[0].emotion, text: items.map(it => it.text).join(' ') });
+    }
     scenes[0].start = 0;
     scenes[scenes.length - 1].end = dur; // adegan terakhir menutup tepat di akhir durasi
     return {
-        research: String(raw.research || '').trim(),
+        research: String(data.research || '').trim(),
         scenes,
-        caption: String(raw.caption || '').trim(),
-        hashtags: String(raw.hashtags || '').trim(),
+        caption: String(data.caption || '').trim(),
+        hashtags: String(data.hashtags || '').trim(),
     };
 }
 
@@ -212,7 +260,7 @@ async function callGemini(env, model, frames, prompt, timeoutMs) {
     };
     if (!/lite/i.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
 
-    const res = await fetch(url, {
+    let res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -221,6 +269,34 @@ async function callGemini(env, model, frames, prompt, timeoutMs) {
         }),
         signal: AbortSignal.timeout(timeoutMs || AI_TIMEOUT_MS),
     });
+    // Jika 400 dan menggunakan thinkingConfig, ulangi tanpa thinkingConfig
+    if (!res.ok && res.status === 400 && generationConfig.thinkingConfig) {
+        const fallbackConfig = { ...generationConfig };
+        delete fallbackConfig.thinkingConfig;
+        res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ role: 'user', parts }],
+                generationConfig: fallbackConfig,
+            }),
+            signal: AbortSignal.timeout(timeoutMs || AI_TIMEOUT_MS),
+        });
+    }
+    // Jika 503 (lonjakan permintaan sementara), tunggu sebentar (800ms) lalu coba sekali lagi
+    if (!res.ok && res.status === 503 && (timeoutMs || AI_TIMEOUT_MS) > 5000) {
+        await new Promise(r => setTimeout(r, 800));
+        res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ role: 'user', parts }],
+                generationConfig,
+            }),
+            signal: AbortSignal.timeout(Math.max(3000, (timeoutMs || AI_TIMEOUT_MS) - 1000)),
+        });
+    }
+
     if (!res.ok) {
         let errMsg = '';
         try { const j = await res.json(); errMsg = j?.error?.message || ''; } catch (ex) { /* non-json */ }
@@ -289,7 +365,7 @@ export async function analyzeVideo(env, { frames, frameTimes, productName, affil
     const times = normalizeFrameTimes(frameTimes, frames.length, dur);
     const prompt = buildAnalysisPrompt({ productName, affiliateLink, duration: dur, gender, frameTimes: times, platform });
     const fallbackEnabled = String(env.GEMINI_FALLBACK_ENABLED ?? 'true') !== 'false';
-    const models = String(env.GEMINI_MODELS || env.GEMINI_MODEL || 'gemini-3.5-flash')
+    const models = String(env.GEMINI_MODELS || env.GEMINI_MODEL || 'gemini-3.5-flash-lite, gemini-3.5-flash, gemini-flash-lite-latest, gemini-3.1-flash-lite')
         .split(',').map(s => s.trim()).filter(Boolean);
     const errors = [];
     const deadline = Date.now() + AI_TOTAL_BUDGET_MS;
