@@ -173,7 +173,7 @@ async function initiateCommercialGeneration() {
     // Prerender audio Gemini TTS untuk semua adegan di latar belakang (agar Putar/Unduh WebM langsung sinkron).
     if (typeof invalidateSceneAudios === 'function') invalidateSceneAudios();
     if (typeof ensureSceneAudios === 'function') {
-        showToast('Menyiapkan audio adegan…', 'info');
+        showToast('Menyiapkan suara video…', 'info');
         ensureSceneAudios().then(() => {
             paintSceneDurations();
         }).catch(() => { /* audio diulang lagi saat Putar/Unduh ditekan */ });

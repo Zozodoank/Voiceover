@@ -1,60 +1,52 @@
-// public/js/audio-engine.js - Mesin audio TTS: prerender per adegan (berurutan agar kuota tidak jebol),
-// satu timeline berjangkar visual (VO ditempatkan di jendela adegan video), playback tersinkron, dan
-// ekspor video WebM nyata (kanvas kompositor + MediaRecorder + audio mix + subtitle burn-in).
+// public/js/audio-engine.js - Mesin audio TTS Gemini murni:
+// 1 video = 1 kali panggil TTS Gemini untuk seluruh naskah video.
+// Audio disimpan di memori untuk pratinjau instan, pemutaran sinkron, pemotongan per adegan,
+// dan perekaman ekspor video WebM/MP4 nyata (kanvas + audio + subtitle burn-in).
 // Classic script: memakai global (generatedScenesData, sceneAudios, getSelectedVoice,
 // getVisualSource, showToast, apiFetch).
 
 let _audioCtx = null;
-let _playToken = 0;          // pembatalan playback aktif (klik Putar/Jeda/Rekam saat diputar)
-let _activeSources = [];     // AudioBufferSourceNode aktif agar bisa dihentikan
+let _playToken = 0;             // pembatalan playback aktif
+let _activeSources = [];        // AudioBufferSourceNode aktif agar bisa dihentikan
 let _rafId = 0;
-let _prerenderInflight = null; // promise prerender aktif (hindari panggilan ganda)
-let _prerenderToken = 0;      // pembatalan prerender basi (video/naskah berganti saat masih berjalan)
-let _scenePreviewAudio = null; // Audio tombol "Dengar" agar tidak tumpang tindih
-let _lastClockLabel = '';      // cache label durasi: DOM hanya ditulis saat detik berubah
+let _videoAudio = null;         // { buffer, duration, blobUrl, sig }
+let _videoAudioInflight = null; // promise fetch aktif untuk cegah panggilan ganda
+let _scenePreviewAudio = null;  // source aktif tombol "Dengar"
+let _lastClockLabel = '';
 
 const EXPORT_W = 1080, EXPORT_H = 1920, EXPORT_FPS = 30;
 
-// Subtitle burn-in: satu tempat untuk ukuran, warna, dan ritme kemunculan.
-const SUB_FONT_PX = 46;             // sebelumnya 60 ("kecilkan sedikit")
-const SUB_LINE_H = 58;              // sebelumnya 74
-const SUB_MAX_LINES = 2;            // cue 3 kata -> hampir selalu 1 baris
-const SUB_WORDS_PER_CUE = 3;        // kata per kemunculan, mengikuti voice over
+// Subtitle burn-in
+const SUB_FONT_PX = 46;
+const SUB_LINE_H = 58;
+const SUB_MAX_LINES = 2;
+const SUB_WORDS_PER_CUE = 3;
 const SUB_MAX_WIDTH = EXPORT_W - 160;
-const SUB_BOTTOM_PAD = 150;         // jarak baseline baris terakhir dari bawah kanvas
-const SUB_COLOR_IDLE = '#ffffff';   // kata lain di cue
-const SUB_COLOR_ACTIVE = '#fde047'; // kata yang sedang diucapkan
-const SUB_STROKE_PX = 5;            // garis tepi (bukan kotak latar): 8 terlalu tebal, 3 tenggelam di footage terang
-const SUB_PAUSE_WEIGHT = 3;         // kata berakhir tanda baca -> diucapkan lebih lama
+const SUB_BOTTOM_PAD = 150;
+const SUB_COLOR_IDLE = '#ffffff';
+const SUB_COLOR_ACTIVE = '#fde047';
+const SUB_STROKE_PX = 5;
+const SUB_PAUSE_WEIGHT = 3;
 
-// Batas tunggu event `start` MediaRecorder. Video 4K + encoder software bisa butuh beberapa detik
-// untuk menyala; watchdog terlalu ketat membuat ekspor gagal padahal perekam hanya terlambat.
 const RECORDER_START_TIMEOUT_MS = 15000;
-
-const SCRIPT_VERSION = 'v3';        // naikkan bila strategi TTS/timeline berubah: memaksa prerender ulang
-const SCENE_GAP_S = 0.12;           // jeda aman antar adegan (hanya dipakai bila masih ada ruang)
-const SCENE_END_GUARD_S = 0.12;     // sisa ruang di ujung jendela agar tidak menyentuh adegan berikutnya
-const SCENE_MAX_TEMPO = 1.18;       // batas percepatan audio (di atas ini pitch mulai terdengar naik)
-const MIN_SCENE_WINDOW_S = 1.2;     // jendela minimal agar tempo tetap wajar
-const VISUAL_DRIFT_TOL_S = 0.15;    // toleransi drift video vs jam audio saat pratinjau
-const VISUAL_DRIFT_TOL_EXPORT_S = 0.2; // lebih longgar saat ekspor (seek bisa memotong frame)
-const LEAD_IN_S = 0.35;             // audio mulai setelah perekaman benar-benar berjalan
-const PACE_MS = 350;                // jeda antar panggilan TTS (hindari 429)
-const SCENE_RETRIES = 2;
-const SILENCE_RATIO = 0.006;        // ambang keheningan relatif terhadap peak
-const TRIM_PAD_S = 0.06;            // sisa padding setelah pemangkasan keheningan
+const SCRIPT_VERSION = 'v4';
+const VISUAL_DRIFT_TOL_S = 0.15;
+const VISUAL_DRIFT_TOL_EXPORT_S = 0.2;
+const LEAD_IN_S = 0.35;
+const SILENCE_RATIO = 0.006;
+const TRIM_PAD_S = 0.06;
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/** Tier kualitas terpilih (id netral; model dipilih server). */
+/** Tier kualitas terpilih (id netral). */
 function getSelectedTier() {
     const r = document.querySelector('input[name="ttsModel"]:checked');
     return r ? r.value : '';
 }
 
-/** Durasi video aktif (sumber jam visual). 0 bila metadata belum siap. */
+/** Durasi video aktif (sumber jam visual). 0 bila belum ada video. */
 function getVideoDurationS() {
     const v = document.getElementById('mainVideo');
     const d = v && Number.isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
@@ -64,92 +56,24 @@ function getVideoDurationS() {
     return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-/** Jendela adegan pada timeline video (di-clamp ke durasi video, dijamin end > start). */
-function sceneWindow(scene, videoDuration) {
-    const limit = videoDuration > 0 ? videoDuration : 0;
-    const s = Number(scene && scene.start);
-    const e = Number(scene && scene.end);
-    let start = Number.isFinite(s) && s >= 0 ? s : 0;
-    let end = Number.isFinite(e) && e > start ? e : (limit > 0 ? limit : start + MIN_SCENE_WINDOW_S);
-    if (limit > 0) {
-        start = Math.min(start, Math.max(0, limit - 0.05));
-        end = Math.min(end, limit);
-    }
-    if (end <= start) end = start + MIN_SCENE_WINDOW_S;
-    return { start, end };
-}
-
-/** True bila naskah membawa timestamp adegan yang bisa dipakai sebagai jangkar visual. */
-function hasSceneWindows(scenes) {
-    return (scenes || []).some((s) => {
-        const st = Number(s && s.start);
-        const en = Number(s && s.end);
-        return Number.isFinite(st) && Number.isFinite(en) && en > st;
-    });
-}
-
-/**
- * Satu-satunya sumber waktu untuk pratinjau, burn-in, ekspor, dan .SRT.
- * Tiap adegan ditempatkan pada jendela visualnya (bukan dirangkai dari durasi audio); sisa
- * selisih diselesaikan tempo <= SCENE_MAX_TEMPO, dan ekor adegan tidak pernah menimpa adegan
- * berikutnya. Naskah lama tanpa timestamp tetap memakai urutan berurutan (perilaku sebelumnya).
- */
-function planTimeline(scenes, audios, videoDuration) {
-    const list = scenes || [];
-    const videoTotal = Number(videoDuration) > 0 ? Number(videoDuration) : 0;
-    const anchored = hasSceneWindows(list);
-    const segments = [];
-    let prevEnd = 0;
-    for (let i = 0; i < list.length; i++) {
-        const a = audios[i];
-        if (!a || !a.buffer) continue;
-        const audioDur = Math.max(0.2, a.duration || a.buffer.duration || 0.2);
-        let start;
-        let avail;
-        if (anchored) {
-            const win = sceneWindow(list[i], videoTotal);
-            avail = Math.max(0.4, (win.end - win.start) - SCENE_END_GUARD_S);
-            start = segments.length === 0 ? win.start : Math.max(win.start, prevEnd + SCENE_GAP_S);
-        } else {
-            avail = audioDur;
-            start = segments.length === 0 ? 0 : prevEnd + SCENE_GAP_S;
-        }
-        const rate = Math.min(SCENE_MAX_TEMPO, Math.max(1, audioDur / avail));
-        const dur = audioDur / rate;
-        const end = start + dur;
-        segments.push({
-            index: i,
-            start,
-            end,
-            dur,
-            rate,
-            audioDur,
-            text: list[i].text || '',
-            emotion: list[i].emotion || '',
-            cues: buildSubtitleCues(list[i].text, start, end), // dipakai burn-in & overlay pratinjau
-        });
-        prevEnd = end;
-    }
-    const lastEnd = segments.length ? segments[segments.length - 1].end : 0;
-    return { segments, total: Math.max(videoTotal, lastEnd), videoDuration: videoTotal, anchored };
-}
-
 function audioCtx() {
     if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (_audioCtx.state === 'suspended') _audioCtx.resume();
+    if (_audioCtx.state === 'suspended') {
+        try { _audioCtx.resume(); } catch (e) { /* ignore */ }
+    }
     return _audioCtx;
 }
 
-/** Signature voice + tier + isi naskah + jendela visual (deteksi perlu prerender ulang tidak). */
-function sceneAudioSignature() {
-    const v = (typeof getSelectedVoice === 'function') ? getSelectedVoice().name : '';
-    const windows = (generatedScenesData || [])
-        .map(s => (s.start == null ? '' : s.start) + '-' + (s.end == null ? '' : s.end)).join(',');
-    return SCRIPT_VERSION + '|' + v + '|' + getSelectedTier() + '|' + getVideoDurationS().toFixed(2) + '|' + windows + '|'
-        + (generatedScenesData || []).map(s => (s.emotion || '') + '#' + (s.text || '')).join('|');
+/** Signature video audio: versi + voice + tier + isi naskah gabungan. */
+function videoAudioSignature() {
+    const v = (typeof getSelectedVoice === 'function') ? getSelectedVoice().name : 'Kore';
+    const tier = getSelectedTier();
+    const scenes = generatedScenesData || [];
+    const text = scenes.map(s => (s.text || '').trim()).filter(Boolean).join(' ');
+    return SCRIPT_VERSION + '|' + v + '|' + tier + '|' + text;
 }
 
-/** Decode audio blob menjadi AudioBuffer dengan kompatibilitas lintas-browser. */
+/** Decode audio blob menjadi AudioBuffer. */
 async function decodeAudioBlob(blob) {
     const ctx = audioCtx();
     if (ctx && ctx.state === 'suspended') {
@@ -175,7 +99,9 @@ async function decodeAudioBlob(blob) {
     });
 }
 
-/** Ambil satu cuplikan TTS sebagai AudioBuffer (plus blobUrl). Melempar error bila gagal. */
+/**
+ * Panggil POST /api/tts/preview: HANYA 1 KALI PER VIDEO untuk naskah lengkap.
+ */
 async function fetchPreviewBuffer(voiceName, text, emotion, tier) {
     const res = await fetch('/api/tts/preview', {
         method: 'POST', credentials: 'same-origin',
@@ -196,26 +122,8 @@ async function fetchPreviewBuffer(voiceName, text, emotion, tier) {
     return { buffer: buf, duration: buf.duration, blobUrl: URL.createObjectURL(blob) };
 }
 
-/** Satu adegan dengan percobaan ulang (429 = kuota -> tunggu lebih lama; 4xx lain tidak akan berhasil). */
-async function fetchSceneAudioWithRetry(voiceName, text, emotion, tier) {
-    let lastErr = null;
-    for (let attempt = 0; attempt <= SCENE_RETRIES; attempt++) {
-        try {
-            return await fetchPreviewBuffer(voiceName, text, emotion, tier);
-        } catch (e) {
-            lastErr = e;
-            const code = (e && e.status) || Number((String((e && e.message) || '').match(/tts_(\d{3})/) || [])[1] || 0);
-            const permanent = code >= 400 && code < 500 && code !== 429;
-            if (permanent || attempt === SCENE_RETRIES) break;
-            await sleep(code === 429 ? 2500 * (attempt + 1) : 800 * (attempt + 1));
-        }
-    }
-    throw lastErr;
-}
-
 /**
- * Buang keheningan awal/akhir hasil TTS. Gemini menambahkan jeda yang membuat subtitle
- * tampak terlambat; memangkasnya membuat teks muncul tepat saat suara mulai.
+ * Buang keheningan awal/akhir hasil TTS.
  */
 function trimSilence(buffer) {
     const data = buffer.getChannelData(0);
@@ -245,92 +153,138 @@ function trimSilence(buffer) {
     return out;
 }
 
-/** Buat audio untuk SEMUA adegan secara BERURUTAN (kuota Gemini TTS terbatas). */
-async function prerenderSceneAudios(onProgress) {
-    const myTok = ++_prerenderToken;
-    const scenes = generatedScenesData || [];
-    const vName = (typeof getSelectedVoice === 'function') ? getSelectedVoice().name : 'Kore';
-    const tier = getSelectedTier();
-    const sig = sceneAudioSignature();
-
-    (sceneAudios || []).forEach(a => { if (a && a.blobUrl) { try { URL.revokeObjectURL(a.blobUrl); } catch (e) { /* ignore */ } } });
-    sceneAudios = new Array(scenes.length).fill(null);
-    sceneAudiosKey = ''; // tandai belum siap sampai selesai
-
-    let fail = 0;
-    for (let i = 0; i < scenes.length; i++) {
-        try {
-            const raw = await fetchSceneAudioWithRetry(vName, scenes[i].text, scenes[i].emotion, tier);
-            // Video/naskah berganti selama menunggu: hasil ini milik timeline lama, buang.
-            if (myTok !== _prerenderToken) return { ok: 0, fail: 0, stale: true };
-            const buf = trimSilence(raw.buffer);
-            sceneAudios[i] = { buffer: buf, duration: buf.duration, blobUrl: raw.blobUrl };
-        } catch (e) {
-            sceneAudios[i] = null; fail++;
-        }
-        if (typeof onProgress === 'function') {
-            try { onProgress(i + 1, scenes.length); } catch (e) { /* ignore */ }
-        }
-        if (i < scenes.length - 1) await sleep(PACE_MS);
-        if (myTok !== _prerenderToken) return { ok: 0, fail: 0, stale: true };
+/**
+ * 1 VIDEO = 1 PANGGILAN TTS GEMINI.
+ * Menggabungkan naskah seluruh adegan menjadi satu dan memanggil Gemini TTS sekali.
+ * Hasil disimpan di _videoAudio dan di-cache dalam memori.
+ */
+async function ensureVideoAudio(onProgress) {
+    if (_videoAudioInflight) {
+        return await _videoAudioInflight;
     }
-    sceneAudiosKey = fail ? '' : sig; // ada adegan gagal -> tanda BELUM siap agar percobaan berikutnya benar-benar mengulang
-    return { ok: scenes.length - fail, fail };
+    const sig = videoAudioSignature();
+    if (_videoAudio && _videoAudio.sig === sig && _videoAudio.buffer) {
+        return _videoAudio;
+    }
+
+    const scenes = generatedScenesData || [];
+    if (!scenes.length) throw new Error('Naskah video belum tersedia.');
+    const fullScript = scenes.map(s => (s.text || '').trim()).filter(Boolean).join(' ');
+    if (!fullScript) throw new Error('Teks naskah video kosong.');
+
+    const vName = (typeof getSelectedVoice === 'function') ? getSelectedVoice().name : 'Kore';
+    const tier = getSelectedTier() || 'tier-normal';
+    const primaryEmotion = (scenes[0] && scenes[0].emotion) || 'Antusias';
+
+    if (typeof onProgress === 'function') {
+        try { onProgress(1, 1); } catch (e) { /* ignore */ }
+    }
+
+    _videoAudioInflight = (async () => {
+        try {
+            const raw = await fetchPreviewBuffer(vName, fullScript, primaryEmotion, tier);
+            const buf = trimSilence(raw.buffer);
+            if (_videoAudio && _videoAudio.blobUrl) {
+                try { URL.revokeObjectURL(_videoAudio.blobUrl); } catch (e) { /* ignore */ }
+            }
+            _videoAudio = {
+                buffer: buf,
+                duration: buf.duration,
+                blobUrl: raw.blobUrl,
+                sig: sig
+            };
+            // Sinkronkan ke array sceneAudios untuk kompatibilitas
+            sceneAudios = scenes.map(s => ({
+                buffer: buf,
+                duration: buf.duration,
+                blobUrl: raw.blobUrl,
+            }));
+            sceneAudiosKey = sig;
+            return _videoAudio;
+        } finally {
+            _videoAudioInflight = null;
+        }
+    })();
+
+    return await _videoAudioInflight;
 }
 
-/**
- * Batalkan audio hasil prerender (video/naskah berganti). Prerender yang masih berjalan dihentikan
- * lewat token: tanpa ini array sceneAudios bisa terisi audio milik timeline lama sebagian-sebagian,
- * dan ekspor berjalan dengan audio bolong.
- */
+/** Alias untuk kompatibilitas kode lain (studio.js / playback.js). */
+async function ensureSceneAudios(onProgress) {
+    return await ensureVideoAudio(onProgress);
+}
+
+/** Batalkan cache audio saat video atau naskah berganti. */
 function invalidateSceneAudios() {
-    _prerenderToken++;
-    _prerenderInflight = null;
-    (sceneAudios || []).forEach(a => { if (a && a.blobUrl) { try { URL.revokeObjectURL(a.blobUrl); } catch (e) { /* ignore */ } } });
+    _videoAudioInflight = null;
+    if (_videoAudio && _videoAudio.blobUrl) {
+        try { URL.revokeObjectURL(_videoAudio.blobUrl); } catch (e) { /* ignore */ }
+    }
+    _videoAudio = null;
+    (sceneAudios || []).forEach(a => {
+        if (a && a.blobUrl) {
+            try { URL.revokeObjectURL(a.blobUrl); } catch (e) { /* ignore */ }
+        }
+    });
     sceneAudios = [];
     sceneAudiosKey = '';
 }
 
-/** Pastikan sceneAudios cocok dengan naskah/voice/tier terpilih; prerender bila perlu. */
-async function ensureSceneAudios(onProgress) {
-    // Prerender yang sedang berjalan bisa jadi milik naskah lama (sudah basi) - tunggu, lalu periksa ulang.
-    if (_prerenderInflight) { try { await _prerenderInflight; } catch (e) { /* ulangi di bawah */ } }
-    const sig = sceneAudioSignature();
-    const complete = sceneAudios.length === (generatedScenesData || []).length && sceneAudios.length > 0;
-    if (sceneAudiosKey === sig && complete && !missingSceneNumbers().length) return;
-    _prerenderInflight = prerenderSceneAudios(onProgress).then((r) => { _prerenderInflight = null; return r; })
-        .catch((e) => { _prerenderInflight = null; throw e; });
-    await _prerenderInflight;
-}
-
-/** Nomor adegan (1-based) yang audionya belum ada. */
-function missingSceneNumbers() {
-    const out = [];
-    (generatedScenesData || []).forEach((s, i) => {
-        const a = sceneAudios[i];
-        if (!a || !a.buffer) out.push(i + 1);
-    });
-    return out;
-}
-
-/** Suara wajib lengkap: tanpa audio, subtitle/ekspor tidak mungkin sinkron. */
+/** Validasi audio sebelum diputar/diekspor. */
 function assertAllAudio() {
-    const missing = missingSceneNumbers();
-    if (missing.length) throw new Error('audio_missing:' + missing.join(','));
+    if (!_videoAudio || !_videoAudio.buffer) {
+        throw new Error('Suara video belum siap.');
+    }
 }
 
 /**
- * Timeline tunggal berjangkar visual: dipakai playback, burn-in, dan ekspor .SRT.
- * -> { segments:[{ index, start, end, dur, rate, text, emotion, cues }], total, videoDuration, anchored }
+ * Satu-satunya sumber timeline untuk pratinjau, burn-in, ekspor, dan .SRT.
  */
 function buildTimeline() {
-    return planTimeline(generatedScenesData || [], sceneAudios || [], getVideoDurationS());
+    const list = generatedScenesData || [];
+    const videoTotal = getVideoDurationS();
+    const audioTotal = (_videoAudio && _videoAudio.duration) || 0;
+    const totalDuration = Math.max(videoTotal, audioTotal, 1);
+
+    // Hitung jendela per adegan
+    const segments = [];
+    for (let i = 0; i < list.length; i++) {
+        const s = list[i];
+        let st = Number(s && s.start);
+        let en = Number(s && s.end);
+        if (!Number.isFinite(st) || st < 0) st = (i * totalDuration) / Math.max(1, list.length);
+        if (!Number.isFinite(en) || en <= st) en = ((i + 1) * totalDuration) / Math.max(1, list.length);
+
+        // Skala proporsional bila audio lebih panjang dari durasi video
+        if (audioTotal > videoTotal && videoTotal > 0) {
+            const scale = audioTotal / videoTotal;
+            st = st * scale;
+            en = en * scale;
+        }
+
+        segments.push({
+            index: i,
+            start: st,
+            end: en,
+            dur: en - st,
+            text: (s && s.text) || '',
+            emotion: (s && s.emotion) || '',
+            cues: buildSubtitleCues((s && s.text) || '', st, en),
+        });
+    }
+
+    return {
+        segments,
+        total: totalDuration,
+        videoDuration: videoTotal,
+        audioDuration: audioTotal
+    };
 }
 
-// Dipakai playback.js / studio.js: SRT & daftar adegan memakai timeline yang SAMA dengan playback.
+// Dipakai playback.js / studio.js untuk ekspor .SRT yang sinkron
 window.getSceneTimeline = () => buildTimeline();
 
-/** True bila waktu berada di dalam jendela bicara adegan tsb (jeda = tanpa subtitle). */
+/** True bila waktu berada di dalam jendela bicara adegan tsb. */
 function subtitleIndexAt(segments, elapsed) {
     for (let i = 0; i < segments.length; i++) {
         if (elapsed >= segments[i].start && elapsed < segments[i].end) return i;
@@ -338,70 +292,30 @@ function subtitleIndexAt(segments, elapsed) {
     return -1;
 }
 
-/** Jadwalkan seluruh adegan berurutan pada ctx. Melempar bila ada audio yang hilang. */
-function scheduleScenes(ctx, destNodes, leadIn) {
-    assertAllAudio();
-    const timeline = buildTimeline();
-    // Dua pembacaan di titik waktu yang sama: jam audio (acuan penjadwalan) dan jam dinding.
-    // Dipakai createRunClock() agar visual tetap berjalan walau jam audio berhenti.
-    const scheduledAt = ctx.currentTime;
-    const scheduledWall = performance.now();
-    const startTime = scheduledAt + (Number.isFinite(leadIn) && leadIn >= 0 ? leadIn : 0.08);
-    _activeSources = [];
-    timeline.segments.forEach((seg) => {
-        const a = sceneAudios[seg.index];
-        const src = ctx.createBufferSource();
-        src.buffer = a.buffer;
-        // Tempo mengecilkan durasi nyata audio agar kalimat muat di jendela adegannya.
-        if (seg.rate && Math.abs(seg.rate - 1) > 0.001) src.playbackRate.value = seg.rate;
-        destNodes.forEach(d => src.connect(d));
-        src.start(startTime + seg.start);
-        _activeSources.push(src);
-    });
-    return {
-        startTime,
-        scheduledAt,
-        scheduledWall,
-        timeline,
-        stop: () => { _activeSources.forEach(s => { try { s.stop && s.stop(); } catch (e) { /* ignore */ } }); },
-    };
-}
-
-/**
- * Jam detik berjalan untuk menggambar frame (playback maupun ekspor).
- * Audio dijadwalkan di atas jam AudioContext, tetapi jam itu bisa BERHENTI walau dinding terus
- * berjalan - misalnya browser tanpa perangkat audio (headless), tab di latar, atau device yang
- * diambil alih aplikasi lain. Dulu visual ikut membeku di satu frame subtitle. Sekarang jam
- * dinding yang dijangkarkan ke jadwal audio diambil sebagai batas atas: frame tidak pernah
- * tertinggal dari suara, dan tidak pernah diam menunggu jam yang berhenti.
- */
+/** Jam detik berjalan untuk menggambar frame playback maupun ekspor. */
 function createRunClock(ctx, run) {
-    const leadS = run.startTime - run.scheduledAt; // jarak jadwal -> awal audio (lead-in)
+    const leadS = run.startTime - run.scheduledAt;
     let last = 0;
     return function elapsedSeconds() {
         const audio = ctx.currentTime - run.startTime;
         const wall = (performance.now() - run.scheduledWall) / 1000 - leadS;
         const next = Math.max(audio, wall, 0);
-        if (next > last) last = next; // monoton: jam audio yang melompat mundur tidak memutar balik video
+        if (next > last) last = next;
         return last;
     };
 }
 
-/**
- * Geser video ke detik yang seharusnya hanya bila sudah melenceng: mencegah video mengulang/
- * berhenti di tengah kalimat, tanpa melakukan seek di tiap frame (seek terus-menerus membuat
- * encoder kelaparan frame).
- */
+/** Sinkronkan elemen video ke detik clock. */
 function syncVisualToClock(el, elapsed, tol) {
     if (!el || !(el.duration > 0)) return;
     const target = Math.max(0, Math.min(elapsed, el.duration - 0.05));
-    if (el.paused) { try { el.play(); } catch (e) { /* autoplay ditolak */ } }
+    if (el.paused) { try { el.play(); } catch (e) { /* ignore */ } }
     if (Math.abs(el.currentTime - target) > (tol || VISUAL_DRIFT_TOL_S)) {
-        try { el.currentTime = target; } catch (e) { /* seek gagal: biarkan drift */ }
+        try { el.currentTime = target; } catch (e) { /* ignore */ }
     }
 }
 
-/** Kembalikan video ke keadaan normal setelah pratinjau/ekspor (tidak lagi loop & tidak mute). */
+/** Kembalikan video ke keadaan normal setelah pratinjau/ekspor. */
 function restoreVisualAfterPlayback() {
     const v = document.getElementById('mainVideo');
     if (!v) return;
@@ -410,19 +324,16 @@ function restoreVisualAfterPlayback() {
     if (!v.paused) { try { v.pause(); } catch (e) { /* ignore */ } }
 }
 
-/** Toggle "Tampilkan Subtitle Otomatis" menentukan overlay pratinjau DAN burn-in kanvas. */
 function subtitlesEnabled() {
     const cb = document.getElementById('subtitleCheckbox');
     return cb ? !!cb.checked : true;
 }
 
-/** mm:ss untuk label durasi pratinjau. */
 function fmtClock(sec) {
     const s = Math.max(0, Math.floor(Number(sec) || 0));
     return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
 }
 
-/** Isi "posisi / total" di bawah timeline (hanya menulis DOM saat detik berubah). */
 function paintPlaybackClock(elapsed, total) {
     const el = document.getElementById('totalDurationLabel');
     if (!el) return;
@@ -432,20 +343,39 @@ function paintPlaybackClock(elapsed, total) {
     el.innerText = label;
 }
 
-/** Putar ulang satu adegan dari audio hasil prerender: hemat kuota (tanpa panggilan TTS baru). */
+/**
+ * Putar cuplikan satu adegan dari buffer audio yang sudah ada di memori.
+ * ZERO API REQUESTS: langsung memotong segmen dari _videoAudio.buffer.
+ */
 function playCachedSceneAudio(idx) {
-    const a = sceneAudios[idx];
-    if (!a || !a.blobUrl) return false;
-    const seg = buildTimeline().segments.find(s => s.index === idx);
-    if (_scenePreviewAudio) { try { _scenePreviewAudio.pause(); } catch (e) { /* ignore */ } }
-    const el = new Audio(a.blobUrl);
-    if (seg && seg.rate > 1) el.playbackRate = Math.min(SCENE_MAX_TEMPO, seg.rate);
-    _scenePreviewAudio = el;
-    el.play().catch(() => { /* autoplay ditolak: user bisa klik lagi */ });
+    if (!_videoAudio || !_videoAudio.buffer) return false;
+    const scene = (generatedScenesData || [])[idx];
+    if (!scene) return false;
+
+    const timeline = buildTimeline();
+    const seg = (timeline.segments || []).find(s => s.index === idx);
+    const start = seg ? seg.start : (Number(scene.start) || 0);
+    const end = seg ? seg.end : (Number(scene.end) || start + 3);
+    const dur = Math.max(0.5, end - start);
+
+    if (_scenePreviewAudio) {
+        try {
+            if (typeof _scenePreviewAudio.stop === 'function') _scenePreviewAudio.stop();
+            else if (typeof _scenePreviewAudio.pause === 'function') _scenePreviewAudio.pause();
+        } catch (e) { /* ignore */ }
+        _scenePreviewAudio = null;
+    }
+
+    const ctx = audioCtx();
+    const src = ctx.createBufferSource();
+    src.buffer = _videoAudio.buffer;
+    src.connect(ctx.destination);
+    src.start(0, start, dur);
+    _scenePreviewAudio = src;
     return true;
 }
 
-/** Perbarui overlay pratinjau (cue yang sama dengan burn-in) + badge adegan. */
+/** Perbarui overlay pratinjau subtitle + badge adegan. */
 function updateOverlayDOM(sceneIdx, sub) {
     const scene = (generatedScenesData || [])[sceneIdx] || {};
     const badge = document.getElementById('currentSceneBadgeText');
@@ -453,7 +383,6 @@ function updateOverlayDOM(sceneIdx, sub) {
     renderOverlaySubtitle(sub);
 }
 
-/** Tulis cue aktif ke overlay pratinjau: warna & kata sama dengan burn-in kanvas. */
 function renderOverlaySubtitle(sub) {
     const el = document.getElementById('subtitleOverlayText');
     if (!el) return;
@@ -475,24 +404,54 @@ function stopEverything() {
     if (_rafId) { cancelAnimationFrame(_rafId); _rafId = 0; }
     _activeSources.forEach(s => { try { s.stop && s.stop(); } catch (e) { /* ignore */ } });
     _activeSources = [];
+    if (_scenePreviewAudio) {
+        try {
+            if (typeof _scenePreviewAudio.stop === 'function') _scenePreviewAudio.stop();
+            else if (typeof _scenePreviewAudio.pause === 'function') _scenePreviewAudio.pause();
+        } catch (e) { /* ignore */ }
+        _scenePreviewAudio = null;
+    }
     restoreVisualAfterPlayback();
     ['subtitleOverlayContainer', 'sceneOverlayBadge'].forEach(id => {
         const el = document.getElementById(id); if (el) el.classList.add('hidden');
     });
 }
 
-/** Mulai playback gabungan tersinkron audio asli (sumber visual: video/kanvas). */
+/**
+ * Mulai pemutaran gabungan tersinkron (video + 1 trek audio Gemini TTS + subtitle).
+ */
 async function startMergedPlayback() {
-    await ensureSceneAudios();
+    await ensureVideoAudio();
     assertAllAudio();
     if (!generatedScenesData || !generatedScenesData.length) return;
+
     stopEverything();
     const myTok = ++_playToken;
     const ctx = audioCtx(); ctx._tok = myTok;
 
-    // Audio dijadwalkan DULU, visual baru dijalankan di detik 0: bila dibalik, video sudah
-    // berjalan selama lead-in sehingga visualnya selalu lebih maju daripada voice over.
-    const run = scheduleScenes(ctx, [ctx.destination], 0.12);
+    const timeline = buildTimeline();
+    const scheduledAt = ctx.currentTime;
+    const scheduledWall = performance.now();
+    const startTime = scheduledAt + 0.1;
+
+    // 1 source tunggal memainkan trek audio Gemini lengkap dari awal hingga selesai
+    const srcNode = ctx.createBufferSource();
+    srcNode.buffer = _videoAudio.buffer;
+    srcNode.connect(ctx.destination);
+    srcNode.start(startTime);
+    _activeSources = [srcNode];
+
+    const run = {
+        startTime,
+        scheduledAt,
+        scheduledWall,
+        timeline,
+        stop: () => {
+            _activeSources.forEach(s => { try { s.stop && s.stop(); } catch (e) { /* ignore */ } });
+            _activeSources = [];
+        }
+    };
+
     const clock = createRunClock(ctx, run);
     const src = getVisualSource();
     if (src.type === 'video') {
@@ -502,18 +461,22 @@ async function startMergedPlayback() {
     const subOn = subtitlesEnabled();
     document.getElementById('subtitleOverlayContainer').classList.toggle('hidden', !subOn);
     document.getElementById('sceneOverlayBadge').classList.toggle('hidden', !subOn);
-    paintPlaybackClock(0, run.timeline.total);
+    paintPlaybackClock(0, timeline.total);
 
-    // Tulis DOM hanya saat state subtitle berubah (per kata), bukan tiap frame.
     let lastKey = '';
     (function loop() {
         if (_playToken !== myTok) return;
         const elapsed = clock();
-        if (elapsed >= run.timeline.total) { stopEverything(); resetPlayBtn && resetPlayBtn(); return; }
+        if (elapsed >= timeline.total) {
+            stopEverything();
+            if (typeof resetPlayBtn === 'function') resetPlayBtn();
+            return;
+        }
         if (src.type === 'video') syncVisualToClock(src.el, elapsed, VISUAL_DRIFT_TOL_S);
-        paintPlaybackClock(elapsed, run.timeline.total);
-        const idx = subtitleIndexAt(run.timeline.segments, elapsed);
-        const seg = idx >= 0 ? run.timeline.segments[idx] : null;
+        paintPlaybackClock(elapsed, timeline.total);
+
+        const idx = subtitleIndexAt(timeline.segments, elapsed);
+        const seg = idx >= 0 ? timeline.segments[idx] : null;
         const cue = seg ? subtitleCueAt(seg.cues, elapsed) : null;
         const word = activeSubtitleWord(cue, elapsed);
         const key = (seg ? seg.index : -1) + '|' + (cue ? cue.start : '') + '|' + (word ? word.start : '');
@@ -526,20 +489,31 @@ async function startMergedPlayback() {
 }
 
 function resetPlayBtn() {
-    const t = document.getElementById('playMergedText'); const ic = document.getElementById('playMergedIcon');
-    if (t) t.innerText = 'Putar'; if (ic) ic.className = 'fa-solid fa-play';
+    const t = document.getElementById('playMergedText');
+    const ic = document.getElementById('playMergedIcon');
+    if (t) t.innerText = 'Putar';
+    if (ic) ic.className = 'fa-solid fa-play';
     isPlayingMerged = false;
 }
 
-/** ==== Ekspor WebM nyata: kanvas kompositor + audio mix + burn subtitle ==== */
+/**
+ * Ekspor video WebM/MP4 nyata: rekaman kanvas 30fps + audio Gemini + burn-in subtitle.
+ */
 async function exportMergedVideoWebM() {
     const btn = document.getElementById('exportMergedBtn');
     const label = document.getElementById('exportBtnLabel');
-    if (btn && btn.disabled) return; // cegah klik ganda
-    if (!generatedScenesData || !generatedScenesData.length) { showToast('Buat Voice Over dulu sebelum mengunduh.', 'error'); return; }
-    if (!window.MediaRecorder) { showToast('Browser ini tidak mendukung pembuatan video langsung. Silakan gunakan unduh file .SRT.', 'error'); return; }
+    if (btn && btn.disabled) return;
+    if (!generatedScenesData || !generatedScenesData.length) {
+        showToast('Buat Voice Over dulu sebelum mengunduh.', 'error');
+        return;
+    }
+    if (!window.MediaRecorder) {
+        showToast('Browser ini tidak mendukung pembuatan video langsung. Silakan gunakan unduh file .SRT.', 'error');
+        return;
+    }
     if (!navigator.mediaDevices || !HTMLCanvasElement.prototype.captureStream) {
-        showToast('Pembuatan video tidak didukung pada browser ini. Silakan gunakan opsi unduh .SRT.', 'error'); return;
+        showToast('Pembuatan video tidak didukung pada browser ini. Silakan gunakan opsi unduh .SRT.', 'error');
+        return;
     }
 
     const setBusy = (busy, text) => {
@@ -547,7 +521,6 @@ async function exportMergedVideoWebM() {
         if (label) label.innerText = busy ? (text || 'Merekam…') : 'Unduh';
     };
 
-    // Bangunkan AudioContext segera pada klik tombol pengguna
     const ctx = audioCtx();
     if (ctx && ctx.state === 'suspended') {
         try { await ctx.resume(); } catch (e) { /* ignore */ }
@@ -556,21 +529,20 @@ async function exportMergedVideoWebM() {
     setBusy(true, 'Menyiapkan suara…');
     stopEverything();
     try {
-        await ensureSceneAudios((done, total) => setBusy(true, `Suara ${done}/${total}…`));
+        await ensureVideoAudio();
         assertAllAudio();
         setBusy(true, 'Merekam…');
 
         const mimeType = pickWebmMime();
         if (!mimeType) throw new Error('Format video tidak didukung browser.');
 
-        // Kanvas kompositor
-        const comp = document.createElement('canvas'); comp.width = EXPORT_W; comp.height = EXPORT_H;
+        const comp = document.createElement('canvas');
+        comp.width = EXPORT_W; comp.height = EXPORT_H;
         const cctx = comp.getContext('2d');
 
         const dest = ctx.createMediaStreamDestination();
         const myTok = ++_playToken; ctx._tok = myTok;
 
-        // Stream video stabil 30fps dari kanvas + stream audio dari AudioContext
         let stream;
         try {
             stream = comp.captureStream(EXPORT_FPS);
@@ -584,10 +556,6 @@ async function exportMergedVideoWebM() {
         recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
 
         const done = new Promise((resolve) => { recorder.onstop = resolve; });
-        // Timeout: bila perekam benar-benar tidak mau jalan, tombol Unduh tidak boleh terkunci selamanya.
-        // Sebagian browser tidak memancarkan event `start` walau perekam sudah berstatus 'recording'
-        // (terlihat saat stream menyertakan track audio dari MediaStreamDestination), jadi status
-        // perekam ikut dipantau - bukan hanya menunggu event.
         const started = new Promise((resolve, reject) => {
             let settled = false;
             const settle = (fn, arg) => {
@@ -607,75 +575,89 @@ async function exportMergedVideoWebM() {
             }, 100);
             recorder.onstart = () => settle(resolve);
         });
+
         const name = sanitizeFile((document.getElementById('productNameInput') || {}).value || 'naskah');
         let stopped = false;
-        let run = null;
+        let srcNode = null;
         let kaOsc = null;
         let watchdog = 0;
+
         const finish = () => {
             if (stopped) return; stopped = true;
             if (watchdog) { clearTimeout(watchdog); watchdog = 0; }
             if (_rafId) cancelAnimationFrame(_rafId);
-            if (run) run.stop();
+            if (srcNode) { try { srcNode.stop(); } catch (e) { /* ignore */ } }
             if (kaOsc) { try { kaOsc.stop(); } catch (e) { /* ignore */ } }
             try { recorder.stop(); } catch (e) { /* ignore */ }
             stream.getTracks().forEach(t => { try { t.stop(); } catch (e) { /* ignore */ } });
             restoreVisualAfterPlayback();
         };
 
-        // Visual disiapkan (tetap diam) lalu dijalankan SETELAH audio dijadwalkan: kalau dibalik,
-        // video sudah berjalan selama lead-in sehingga detiknya tidak lagi sama dengan VO.
         const vis = getVisualSource();
         if (vis.type === 'video') { try { vis.el.loop = false; vis.el.muted = true; } catch (e) { /* ignore */ } }
 
-        // Render frame awal hitam agar stream kanvas segera memiliki data frame valid
         cctx.fillStyle = '#000';
         cctx.fillRect(0, 0, comp.width, comp.height);
 
-        // Rekaman HARUS hidup dulu, baru audio dijadwalkan: kalau dibalik, awal VO terpotong
-        // dan seluruh video bergeser (subtitle tampak telat).
         recorder.start(200);
         await started;
         if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (e) { /* ignore */ } }
-        // Dibatalkan pengguna tepat saat perekam menyala: jangan jadwalkan audio ke stream yang sudah mati.
         if (_playToken !== myTok || stopped) { finish(); return; }
 
-        run = scheduleScenes(ctx, [dest], LEAD_IN_S); // audio TTS -> stream, dengan lead-in senyap
+        const timeline = buildTimeline();
+        const scheduledAt = ctx.currentTime;
+        const scheduledWall = performance.now();
+        const startTime = scheduledAt + LEAD_IN_S;
+
+        srcNode = ctx.createBufferSource();
+        srcNode.buffer = _videoAudio.buffer;
+        srcNode.connect(dest);
+        srcNode.start(startTime);
+        _activeSources = [srcNode];
+
+        const run = {
+            startTime,
+            scheduledAt,
+            scheduledWall,
+            timeline,
+            stop: finish
+        };
         const clock = createRunClock(ctx, run);
         if (vis.type === 'video') { try { vis.el.currentTime = 0; await vis.el.play(); } catch (e) { /* ignore */ } }
-        // Jaring pengaman: bila requestAnimationFrame berhenti total (tab benar-benar tersembunyi),
-        // ekspor tetap ditutup supaya tombol Unduh tidak terkunci selamanya.
-        watchdog = setTimeout(finish, (LEAD_IN_S + run.timeline.total + 5) * 1000);
-        // Sumber senyap (gain 0) menjaga track audio MediaStreamDestination tetap merender selama
-        // rekaman. Tanpa ini, saat tidak ada buffer audio, Chrome menulis WebM 0-byte.
+
+        watchdog = setTimeout(finish, (LEAD_IN_S + timeline.total + 5) * 1000);
+
         const kaGain = ctx.createGain(); kaGain.gain.value = 0;
         kaOsc = ctx.createOscillator(); kaOsc.type = 'sine'; kaOsc.frequency.value = 1;
         kaOsc.connect(kaGain); kaGain.connect(dest);
-        kaOsc.start(run.startTime); kaOsc.stop(run.startTime + run.timeline.total + 0.5);
+        kaOsc.start(run.startTime); kaOsc.stop(run.startTime + timeline.total + 0.5);
 
         const frameMs = 1000 / EXPORT_FPS;
         let lastFrameAt = 0;
         (function draw() {
             if (_playToken !== myTok) { finish(); return; }
             const elapsed = clock();
-            if (elapsed >= run.timeline.total) { setTimeout(finish, 250); return; }
-            // Paling banyak satu frame per EXPORT_FPS. Menggambar lebih cepat dari laju rekaman hanya
-            // membuat encoder membuang frame (encoder software bisa tertinggal jauh), sehingga isi
-            // video jadi lebih sedikit daripada yang digambar.
+            if (elapsed >= timeline.total) { setTimeout(finish, 250); return; }
             const now = performance.now();
             if (now - lastFrameAt < frameMs - 1) { _rafId = requestAnimationFrame(draw); return; }
             lastFrameAt = now;
-            const segIdx = subtitleIndexAt(run.timeline.segments, Math.max(0, elapsed));
-            const seg = segIdx >= 0 ? run.timeline.segments[segIdx] : null;
-            const sceneIdx = segIdx >= 0 ? run.timeline.segments[segIdx].index : (run.timeline.segments[0] || {}).index || 0;
+
+            const segIdx = subtitleIndexAt(timeline.segments, Math.max(0, elapsed));
+            const seg = segIdx >= 0 ? timeline.segments[segIdx] : null;
+            const sceneIdx = segIdx >= 0 ? timeline.segments[segIdx].index : 0;
             const t = Math.max(0, elapsed);
             const cue = seg ? subtitleCueAt(seg.cues, t) : null;
             const sub = seg ? { cue, word: activeSubtitleWord(cue, t) } : null;
+
             if (vis.type === 'video') syncVisualToClock(vis.el, t, VISUAL_DRIFT_TOL_EXPORT_S);
             try {
                 drawFrame(cctx, comp, sceneIdx, sub);
             } catch (err) {
-                if (err && err.name === 'SecurityError') { finish(); showToast('Format video tidak didukung untuk penggabungan langsung. Silakan gunakan opsi unduh .SRT.', 'error'); return; }
+                if (err && err.name === 'SecurityError') {
+                    finish();
+                    showToast('Format video tidak didukung untuk penggabungan langsung. Silakan gunakan opsi unduh .SRT.', 'error');
+                    return;
+                }
             }
             _rafId = requestAnimationFrame(draw);
         })();
@@ -694,12 +676,7 @@ async function exportMergedVideoWebM() {
         setTimeout(() => { try { document.body.removeChild(a); } catch (e) { /* ignore */ } URL.revokeObjectURL(url); }, 4000);
         showToast('Video (VO + subtitle) berhasil diunduh!', 'success');
     } catch (e) {
-        const msg = String((e && e.message) || e);
-        if (msg.indexOf('audio_missing:') === 0) {
-            showToast('Suara adegan ' + msg.split(':')[1] + ' gagal dibuat. Tekan Unduh sekali lagi untuk mengulang.', 'error');
-        } else {
-            showToast('Pembuatan video belum berhasil. Silakan coba lagi atau unduh .SRT.', 'error');
-        }
+        showToast('Pembuatan video belum berhasil. Silakan coba lagi atau unduh .SRT.', 'error');
     } finally {
         resetPlayBtn();
         setBusy(false);
@@ -716,17 +693,12 @@ function pickWebmMime() {
         'video/mp4;codecs=avc1,mp4a.40.2',
         'video/mp4'
     ];
-    for (const m of cands) { if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m; }
+    for (const m of cands) {
+        if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
+    }
     return '';
 }
 
-/**
- * Pecah teks adegan jadi cue pendek (SUB_WORDS_PER_CUE kata) + waktu tiap kata.
- * TTS tidak mengirim timestamp per kata, jadi durasi dibagi proporsional dari panjang
- * kata + jeda tanda baca, DI DALAM durasi audio asli adegan. Cue selalu bersambung
- * (cue.end === cue berikutnya.start) sehingga tidak ada kedip di tengah adegan.
- * -> [{ start, end, words: [{ text, start, end }] }]
- */
 function buildSubtitleCues(text, start, end) {
     const words = String(text || '').trim().split(/\s+/).filter(Boolean);
     if (!words.length) return [];
@@ -747,7 +719,6 @@ function buildSubtitleCues(text, start, end) {
     return cues;
 }
 
-/** Cue yang tampil pada detik t (null saat jeda antar adegan / belum bicara). */
 function subtitleCueAt(cues, t) {
     const list = cues || [];
     for (let i = 0; i < list.length; i++) {
@@ -756,7 +727,6 @@ function subtitleCueAt(cues, t) {
     return null;
 }
 
-/** Kata yang sedang diucapkan di dalam cue (null bila cue kosong). */
 function activeSubtitleWord(cue, t) {
     if (!cue) return null;
     let cur = cue.words[0] || null;
@@ -764,28 +734,20 @@ function activeSubtitleWord(cue, t) {
     return cur;
 }
 
-/** Gambar satu frame kompositor: visual (video/kanvas) + badge emosi + subtitle burn-in. */
 function drawFrame(cctx, comp, idx, sub) {
     const scene = (generatedScenesData || [])[idx] || {};
     const vis = getVisualSource();
-    // dasar hitam
     cctx.fillStyle = '#000'; cctx.fillRect(0, 0, comp.width, comp.height);
     if (vis.type === 'video' && vis.el && vis.el.readyState >= 2) {
         drawCover(cctx, vis.el, comp.width, comp.height);
     }
-    // badge adegan (kiri atas) - skala portrait 1080x1920
     cctx.fillStyle = 'rgba(0,0,0,0.55)';
     roundRect(cctx, 24, 24, 520, 64, 32); cctx.fill();
     cctx.fillStyle = '#fff'; cctx.font = 'bold 32px Inter, sans-serif'; cctx.textAlign = 'left'; cctx.textBaseline = 'middle';
     cctx.fillText(`Adegan ${idx + 1}: ${scene.emotion || ''}`, 40, 56);
-    // subtitle burn-in (bawah, tengah) - kosong saat jeda antar adegan
     drawSubtitle(cctx, comp, sub);
 }
 
-/**
- * Burn-in subtitle: cue pendek di bawah tengah, tanpa kotak latar.
- * Kata yang sedang diucapkan kuning, kata lain putih (gaya "viral").
- */
 function drawSubtitle(cctx, comp, sub) {
     if (!subtitlesEnabled()) return;
     const cue = sub && sub.cue;
@@ -811,7 +773,6 @@ function drawSubtitle(cctx, comp, sub) {
     }
 }
 
-/** Gambar sumber video mengisi penuh w×h (crop sisi berlebih), ter-center. */
 function drawCover(cctx, el, w, h) {
     const sw = el.videoWidth || el.width || w, sh = el.videoHeight || el.height || h;
     const scale = Math.max(w / sw, h / sh);
@@ -825,7 +786,6 @@ function roundRect(cctx, x, y, w, h, r) {
     cctx.arcTo(x, y + h, x, y, r); cctx.arcTo(x, y, x + w, y, r); cctx.closePath();
 }
 
-/** Bungkus kata cue jadi baris (maks SUB_MAX_LINES) dari lebar tiap kata. */
 function wrapCueWords(words, space, maxW) {
     const lines = []; let line = []; let w = 0;
     for (const it of words) {
@@ -841,7 +801,6 @@ function sanitizeFile(s) {
     return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'naskah';
 }
 
-// Wiring toggle "Tampilkan Subtitle Otomatis": berlaku langsung saat pratinjau berjalan.
 (function wireSubtitleToggle() {
     const cb = document.getElementById('subtitleCheckbox');
     if (!cb) return;

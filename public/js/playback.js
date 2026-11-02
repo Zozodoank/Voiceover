@@ -28,12 +28,7 @@ function togglePlayMergedVideo() {
     icon.className = 'fa-solid fa-pause';
     showToast('Memutar video dengan voice over dan subtitle...', 'info');
     startMergedPlayback().catch((e) => {
-        const msg = String((e && e.message) || e);
-        if (msg.indexOf('audio_missing:') === 0) {
-            showToast('Suara adegan ' + msg.split(':')[1] + ' belum siap. Coba tekan Putar sekali lagi.', 'error');
-        } else {
-            showToast('Gagal memutar video. Silakan coba lagi.', 'error');
-        }
+        showToast('Gagal memutar video. Silakan coba lagi.', 'error');
         resetPlayBtn();
     });
 }
@@ -60,17 +55,12 @@ async function downloadSrtFile() {
         return;
     }
     // Subtitle harus memakai waktu audio yang sebenarnya -> pastikan audio adegan sudah siap.
-    showToast('Menyiapkan audio agar waktu subtitle presisi…', 'info');
+    showToast('Menyiapkan suara video…', 'info');
     try {
         await ensureSceneAudios();
         assertAllAudio();
     } catch (e) {
-        const msg = String((e && e.message) || e);
-        if (msg.indexOf('audio_missing:') === 0) {
-            showToast('Suara adegan ' + msg.split(':')[1] + ' gagal dibuat. Coba unduh .SRT sekali lagi.', 'error');
-        } else {
-            showToast('Gagal menyiapkan audio: ' + msg, 'error');
-        }
+        showToast('Gagal menyiapkan suara video. Silakan coba lagi.', 'error');
         return;
     }
     const timeline = (typeof window.getSceneTimeline === 'function') ? window.getSceneTimeline() : buildTimeline();

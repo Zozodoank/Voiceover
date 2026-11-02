@@ -31,7 +31,7 @@ const TIER_MODEL_ENV = {
 
 // Batas teks TTS: cukup untuk satu adegan utuh. Teks lebih panjang DITOLAK, bukan dipotong
 // diam-diam (pemotongan membuat audio lebih pendek dari subtitle = desync).
-export const TTS_MAX_TEXT = 1500;
+export const TTS_MAX_TEXT = 4000;
 
 /** True bila id tier dikenal frontend/worker. */
 export function isKnownTier(tier) {
@@ -40,9 +40,9 @@ export function isKnownTier(tier) {
 
 /** Rantai model untuk satu tier: model utama + fallback (env TTS_FALLBACK_ORDER, pisahkan koma). */
 const DEFAULT_TIER_FALLBACKS = {
-    'tier-normal': ['gemini-3.1-flash-tts-preview', 'gemini-3.8-flash-tts'],
-    'tier-sedang': ['gemini-2.5-flash-preview-tts', 'gemini-3.8-flash-tts'],
-    'tier-tinggi': ['gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts'],
+    'tier-normal': ['gemini-3.1-flash-tts-preview', 'gemini-3.8-flash-tts', 'gemini-2.5-flash-preview-tts'],
+    'tier-sedang': ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts', 'gemini-2.5-flash-preview-tts'],
+    'tier-tinggi': ['gemini-3.1-flash-tts-preview', 'gemini-3.8-flash-lite-tts', 'gemini-2.5-flash-preview-tts'],
 };
 
 export function tierModels(env, tier) {
@@ -246,7 +246,8 @@ async function callGeminiTts(env, model, { text, voiceName, emotion }, timeoutMs
         try { const j = await res.json(); msg = (j && j.error && j.error.message) || ''; } catch (e) { /* non-json */ }
         const err = new Error(`Gemini TTS HTTP ${res.status}${msg ? ': ' + msg : ''}`);
         err.status = res.status;
-        if (res.status !== 429 && res.status !== 503) throw err;
+        if (res.status === 429) throw err; // 429 pada satu model langsung fallback ke model Gemini berikutnya
+        if (res.status !== 503) throw err;
         lastErr = err;
         if (attempt < TTS_RETRY_DELAYS_MS.length - 1) await sleep(retryDelay(res, attempt));
     }
@@ -306,121 +307,16 @@ export async function synthesizeGemini(env, { text, voiceName, emotion, tier }) 
     throw err;
 }
 
-/** Sintesis via AIVene (fallback) -> { bytes, contentType:'audio/mpeg', provider:'aivene' }. */
-export async function synthesizeAivene(env, { text, emotion }) {
-    const base = String(env.AIVENE_BASE_URL || 'https://api.aivene.com/v1').replace(/\/$/, '');
-    const url = base.endsWith('/audio/speech') ? base : `${base}/audio/speech`;
-    const model = env.AIVENE_TTS_MODEL || 'tts-1';
-    const voice = env.AIVENE_TTS_VOICE || 'nova'; // voice AIVene tetap (jangan kirim nama Gemini)
-
-    const body = { model, input: text, voice, response_format: 'mp3', speed: 1.0, instructions: buildTtsStyle(emotion, env) };
-
-    const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.AIVENE_API_KEY}` },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(AIVENE_TTS_TIMEOUT_MS),
-    });
-    if (!res.ok) {
-        let msg = '';
-        try { const j = await res.json(); msg = (j && j.error && j.error.message) || (j && j.message) || ''; } catch (e) { /* non-json */ }
-        const err = new Error(`AIVene TTS HTTP ${res.status}${msg ? ': ' + msg : ''}`);
-        err.status = res.status;
-        throw err;
-    }
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    if (!bytes.byteLength) throw new Error('AIVene TTS tidak mengembalikan audio');
-    return { bytes, contentType: 'audio/mpeg', provider: 'aivene' };
-}
-
 /**
- * Fallback TTS via Google Translate TTS (Indonesian).
- * Tanpa batas kuota harian 10-req, tanpa API key, stabil & cepat (~200ms).
- */
-export async function synthesizeGoogleTranslateTts({ text, lang = 'id' }) {
-    const clean = String(text || '').trim();
-    if (!clean) throw new Error('Teks TTS kosong');
-
-    const words = clean.split(/\s+/).filter(Boolean);
-    const chunks = [];
-    let current = '';
-
-    for (const w of words) {
-        if ((current + ' ' + w).trim().length > 150) {
-            if (current) chunks.push(current.trim());
-            current = w;
-        } else {
-            current = current ? current + ' ' + w : w;
-        }
-    }
-    if (current) chunks.push(current.trim());
-
-    const buffers = [];
-    for (const chunk of chunks) {
-        const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${encodeURIComponent(lang)}&client=tw-ob&q=${encodeURIComponent(chunk)}`;
-        const res = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-                'Accept': '*/*',
-            },
-            signal: AbortSignal.timeout(10000),
-        });
-        if (!res.ok) throw new Error(`Google Translate TTS HTTP ${res.status}`);
-        const ab = await res.arrayBuffer();
-        if (ab.byteLength > 0) buffers.push(new Uint8Array(ab));
-    }
-
-    if (buffers.length === 0) throw new Error('Google Translate TTS mengembalikan audio kosong');
-
-    if (buffers.length === 1) {
-        return { bytes: buffers[0], contentType: 'audio/mpeg', provider: 'google-translate', model: 'translate-tts' };
-    }
-
-    const total = buffers.reduce((acc, b) => acc + b.byteLength, 0);
-    const merged = new Uint8Array(total);
-    let offset = 0;
-    for (const b of buffers) {
-        merged.set(b, offset);
-        offset += b.byteLength;
-    }
-    return { bytes: merged, contentType: 'audio/mpeg', provider: 'google-translate', model: 'translate-tts' };
-}
-
-/**
- * Router utama suara VO: Gemini TTS lebih dulu (rantai model per tier).
- * Jika kuota free tier Gemini habis (limit 10 req/hari 429) atau model sibuk (503),
- * otomatis beralih ke Google Translate TTS agar tombol putar dan download video SELALU berhasil.
- * Mengembalikan { bytes, contentType, provider, model } atau melempar Error terakhir (dengan .status).
+ * Router utama suara VO: Murni Gemini TTS (dengan rantai model fallback Gemini per tier).
+ * 1 video = 1 kali panggil TTS Gemini untuk seluruh naskah video.
+ * Mengembalikan { bytes, contentType, provider: 'gemini', model } atau melempar Error.
  */
 export async function synthesizeVoice(env, { text, voiceName, emotion, tier }) {
-    let lastError = null;
-    if (env.GEMINI_API_KEY) {
-        try {
-            return await synthesizeGemini(env, { text, voiceName, emotion, tier });
-        } catch (e) {
-            lastError = e;
-            console.warn(`Gemini TTS tier=${tier} gagal (${e.message}). Mencoba cadangan Google TTS...`);
-        }
-    } else {
-        lastError = new Error('GEMINI_API_KEY kosong');
+    if (!env || !env.GEMINI_API_KEY) {
+        const err = new Error('GEMINI_API_KEY belum dikonfigurasi di server.');
+        err.status = 503;
+        throw err;
     }
-
-    const degrade = String(env.TTS_ALLOW_DEGRADE || 'false').toLowerCase() === 'true';
-    if (degrade && env.AIVENE_API_KEY) {
-        try {
-            return await synthesizeAivene(env, { text, emotion });
-        } catch (e) { lastError = e; }
-    }
-
-    // Fallback otomatis ke Google Translate TTS untuk memastikan suara selalu terbuat
-    try {
-        const fb = await synthesizeGoogleTranslateTts({ text, lang: 'id' });
-        console.log(`TTS Google Translate fallback sukses untuk teks="${text.slice(0, 30)}..." (${fb.bytes.byteLength} bytes)`);
-        return fb;
-    } catch (fbErr) {
-        console.error('TTS Google Translate fallback gagal:', fbErr.message);
-    }
-
-    throw lastError || new Error('Tidak ada provider TTS yang berhasil membuat suara');
+    return await synthesizeGemini(env, { text, voiceName, emotion, tier });
 }
-

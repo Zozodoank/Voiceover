@@ -28,8 +28,8 @@ router.get('/tts/voices', (c) => c.json({ voices: listVoices(c.env) }));
 
 /** POST /api/tts/preview {voiceName, text?, emotion?, tier?} - audio adegan (WAV). */
 router.post('/tts/preview', requireAuth, async (c) => {
-    if (!c.env.GEMINI_API_KEY && !(c.env.AIVENE_API_KEY && degradeEnabled(c.env))) {
-        return c.json({ error: 'tts_unavailable', message: 'GEMINI_API_KEY belum diatur di server.' }, 503);
+    if (!c.env.GEMINI_API_KEY) {
+        return c.json({ error: 'tts_unavailable', message: 'Layanan suara sedang dalam pemeliharaan.' }, 503);
     }
     const body = await c.req.json().catch(() => ({}));
     const voiceName = String(body.voiceName || '');
@@ -48,7 +48,7 @@ router.post('/tts/preview', requireAuth, async (c) => {
     const emotion = String(body.emotion || '').trim().slice(0, 40);
     const tier = isKnownTier(body.tier) ? String(body.tier) : 'tier-normal';
 
-    const cacheKey = `tts:v1:${tier}:${voiceName}:${emotion || '-'}:${await hashText(text)}`;
+    const cacheKey = `tts:v4:${tier}:${voiceName}:${await hashText(text)}`;
     try {
         const hit = await c.env.ORDERS.getWithMetadata(cacheKey, 'arrayBuffer');
         if (hit && hit.value && hit.value.byteLength) {
@@ -92,15 +92,15 @@ router.post('/tts/preview', requireAuth, async (c) => {
         });
     } catch (e) {
         const s = e && e.status;
-        if (s === 401) return c.json({ error: 'tts_key_invalid', message: 'Kunci API TTS tidak valid.' }, 502);
-        if (s === 402) return c.json({ error: 'tts_billing', message: 'Kredit TTS habis atau kena limit belanja.' }, 502);
-        if (s === 403) return c.json({ error: 'tts_forbidden', message: 'Kunci API tidak punya akses model TTS ini.' }, 502);
+        if (s === 401) return c.json({ error: 'tts_key_invalid', message: 'Layanan suara sedang dalam pemeliharaan.' }, 502);
+        if (s === 402) return c.json({ error: 'tts_billing', message: 'Layanan suara sedang dalam pemeliharaan.' }, 502);
+        if (s === 403) return c.json({ error: 'tts_forbidden', message: 'Layanan suara sedang dalam pemeliharaan.' }, 502);
         if (s === 429) {
-            return c.json({ error: 'tts_rate', message: 'Kuota TTS sedang penuh, coba lagi beberapa saat.' }, 429, {
+            return c.json({ error: 'tts_rate', message: 'Layanan suara sedang sibuk, silakan coba beberapa saat lagi.' }, 429, {
                 'Retry-After': '5',
             });
         }
-        return c.json({ error: 'tts_failed', message: 'Suara gagal dibuat. Coba lagi beberapa saat.' }, 502);
+        return c.json({ error: 'tts_failed', message: 'Suara belum berhasil dibuat. Silakan coba sesaat lagi.' }, 502);
     }
 });
 
