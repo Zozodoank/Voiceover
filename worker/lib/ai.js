@@ -3,7 +3,7 @@
 
 import { ALLOWED_EMOTIONS } from './tts.js';
 
-const AI_TIMEOUT_MS = 25000;      // per panggilan model (Cloudflare free tier max 30 dtk CPU)
+const AI_TIMEOUT_MS = 15000;      // per panggilan model (Cloudflare free tier max 30 dtk CPU)
 const AI_TOTAL_BUDGET_MS = 55000; // anggaran total lintas provider - Cloudflare subrequest 30 dtk masing-masing
 
 /** Aturan CTA per platform tujuan - menentukan frasa keranjang yang boleh/tidak boleh. */
@@ -285,7 +285,7 @@ async function callGemini(env, model, frames, prompt, timeoutMs) {
     }
     // Jika 503 (lonjakan permintaan sementara), tunggu sebentar (800ms) lalu coba sekali lagi
     if (!res.ok && res.status === 503 && (timeoutMs || AI_TIMEOUT_MS) > 5000) {
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 600));
         res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -365,7 +365,7 @@ export async function analyzeVideo(env, { frames, frameTimes, productName, affil
     const times = normalizeFrameTimes(frameTimes, frames.length, dur);
     const prompt = buildAnalysisPrompt({ productName, affiliateLink, duration: dur, gender, frameTimes: times, platform });
     const fallbackEnabled = String(env.GEMINI_FALLBACK_ENABLED ?? 'true') !== 'false';
-    const models = String(env.GEMINI_MODELS || env.GEMINI_MODEL || 'gemini-3.5-flash-lite, gemini-3.5-flash, gemini-flash-lite-latest, gemini-3.1-flash-lite')
+    const models = String(env.GEMINI_MODELS || env.GEMINI_MODEL || 'gemini-3.5-flash-lite, gemini-flash-lite-latest, gemini-3.5-flash, gemini-3.1-flash-lite, gemini-3.8-flash, gemini-3.6-flash')
         .split(',').map(s => s.trim()).filter(Boolean);
     const errors = [];
     const deadline = Date.now() + AI_TOTAL_BUDGET_MS;

@@ -193,7 +193,7 @@ async function fetchSceneAudioWithRetry(voiceName, text, emotion, tier) {
             return await fetchPreviewBuffer(voiceName, text, emotion, tier);
         } catch (e) {
             lastErr = e;
-            const code = Number((String((e && e.message) || '').match(/tts_(\d{3})/) || [])[1] || 0);
+            const code = (e && e.status) || Number((String((e && e.message) || '').match(/tts_(\d{3})/) || [])[1] || 0);
             const permanent = code >= 400 && code < 500 && code !== 429;
             if (permanent || attempt === SCENE_RETRIES) break;
             await sleep(code === 429 ? 2500 * (attempt + 1) : 800 * (attempt + 1));

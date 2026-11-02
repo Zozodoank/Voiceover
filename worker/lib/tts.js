@@ -3,9 +3,9 @@
 // siap pakai (mis. model 3.8). AIVene hanya dipakai bila TTS_ALLOW_DEGRADE="true" (default MATI)
 // agar kualitas tidak pernah turun diam-diam ke voice robotik.
 
-const TTS_TIMEOUT_DEFAULT_MS = 30000;
+const TTS_TIMEOUT_DEFAULT_MS = 15000;
 const AIVENE_TTS_TIMEOUT_MS = 12000;
-const TTS_RETRY_DELAYS_MS = [800, 1600, 3200];
+const TTS_RETRY_DELAYS_MS = [600];
 
 // Tier kualitas memakai id NETRAL: nama model tidak boleh muncul di frontend.
 export const TTS_TIER_IDS = ['tier-normal', 'tier-sedang', 'tier-tinggi'];
@@ -18,7 +18,7 @@ export const TTS_TIER_META = {
 
 // Normal -> 2.5 Flash TTS, Sedang -> 3.1 Flash TTS, Tinggi -> 3.8 Flash TTS (fallback 3.1).
 const DEFAULT_TIER_MODEL = {
-    'tier-normal': 'gemini-2.5-flash-preview-tts',
+    'tier-normal': 'gemini-3.8-flash-lite-tts',
     'tier-sedang': 'gemini-3.1-flash-tts-preview',
     'tier-tinggi': 'gemini-3.8-flash-tts',
 };

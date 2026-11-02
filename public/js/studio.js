@@ -75,35 +75,52 @@ async function initiateCommercialGeneration() {
         return;
     }
 
-    // Tahap 2: analisa AI di Worker (Gemini utama, fallback AIVene qwen3.8-flash)
+    // Tahap 2: analisa AI di Worker (rantai fallback model cerdas)
     setProgress(55, `<i class="fa-solid fa-circle-notch fa-spin"></i> Menganalisis video & menyusun naskah voice over...`);
-    let resp;
-    try {
-        resp = await apiFetch('/api/analyze', {
-            method: 'POST',
-            body: {
-                frames: frameDataUrls,
-                frameTimes,
-                productName,
-                affiliateLink: document.getElementById('affiliateLinkInput').value.trim(),
-                duration,
-                gender,
-                voiceName,
-                platform,
-                modelValue
+    let resp = null;
+    let lastAnalyzeErr = null;
+    const maxRetries = 2;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            if (attempt > 0) {
+                setProgress(60, `<i class="fa-solid fa-arrows-rotate fa-spin"></i> Menghubungi server cadangan (percobaan ${attempt + 1})...`);
+                await new Promise(r => setTimeout(r, 1000 * attempt));
             }
-        });
-    } catch (err) {
+            resp = await apiFetch('/api/analyze', {
+                method: 'POST',
+                body: {
+                    frames: frameDataUrls,
+                    frameTimes,
+                    productName,
+                    affiliateLink: document.getElementById('affiliateLinkInput').value.trim(),
+                    duration,
+                    gender,
+                    voiceName,
+                    platform,
+                    modelValue
+                }
+            });
+            lastAnalyzeErr = null;
+            break;
+        } catch (err) {
+            lastAnalyzeErr = err;
+            if ((err.status === 502 || err.status === 503 || err.status === 429) && attempt < maxRetries) {
+                continue;
+            }
+            break;
+        }
+    }
+    if (lastAnalyzeErr) {
         statusBox.classList.add('hidden');
-        if (err.handled) return;
-        if (err.status === 402) {
-            const d = err.data || {};
+        if (lastAnalyzeErr.handled) return;
+        if (lastAnalyzeErr.status === 402) {
+            const d = lastAnalyzeErr.data || {};
             showToast(`Saldo Anda belum mencukupi (Rp ${(d.have || 0).toLocaleString('id-ID')}). Silakan isi saldo QRIS terlebih dahulu.`, 'error');
             openTopUpQrisModal(modelPrice);
-        } else if (err.status === 502) {
+        } else if (lastAnalyzeErr.status === 502) {
             showToast('Layanan Voice Over sedang sibuk. Silakan coba sesaat lagi.', 'error');
         } else {
-            showToast('Analisa gagal: ' + err.message, 'error');
+            showToast('Analisa gagal: ' + lastAnalyzeErr.message, 'error');
         }
         return;
     }
