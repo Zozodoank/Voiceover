@@ -149,6 +149,21 @@ function sceneAudioSignature() {
         + (generatedScenesData || []).map(s => (s.emotion || '') + '#' + (s.text || '')).join('|');
 }
 
+/** Decode audio blob menjadi AudioBuffer dengan kompatibilitas lintas-browser. */
+async function decodeAudioBlob(blob) {
+    const ctx = audioCtx();
+    if (ctx && ctx.state === 'suspended') {
+        try { await ctx.resume(); } catch (e) { /* ignore */ }
+    }
+    const arrayBuffer = await blob.arrayBuffer();
+    return new Promise((resolve, reject) => {
+        const p = ctx.decodeAudioData(arrayBuffer, resolve, reject);
+        if (p && typeof p.then === 'function') {
+            p.then(resolve, reject);
+        }
+    });
+}
+
 /** Ambil satu cuplikan TTS sebagai AudioBuffer (plus blobUrl). Melempar error bila gagal. */
 async function fetchPreviewBuffer(voiceName, text, emotion, tier) {
     const res = await fetch('/api/tts/preview', {
@@ -157,9 +172,16 @@ async function fetchPreviewBuffer(voiceName, text, emotion, tier) {
         body: JSON.stringify({ voiceName, text, emotion: emotion || undefined, tier: tier || undefined }),
     });
     const ct = res.headers.get('Content-Type') || '';
-    if (!res.ok || ct.indexOf('audio') === -1) throw new Error('tts_' + res.status);
+    if (!res.ok || ct.indexOf('audio') === -1) {
+        let errJson = null;
+        try { errJson = await res.json(); } catch (e) { /* non-json */ }
+        const msg = (errJson && errJson.message) || ('tts_' + res.status);
+        const err = new Error(msg);
+        err.status = res.status;
+        throw err;
+    }
     const blob = await res.blob();
-    const buf = await audioCtx().decodeAudioData(await blob.arrayBuffer());
+    const buf = await decodeAudioBlob(blob);
     return { buffer: buf, duration: buf.duration, blobUrl: URL.createObjectURL(blob) };
 }
 
@@ -596,6 +618,11 @@ async function exportMergedVideoWebM() {
         // video sudah berjalan selama lead-in sehingga detiknya tidak lagi sama dengan VO.
         const vis = getVisualSource();
         if (vis.type === 'video') { try { vis.el.loop = false; vis.el.muted = true; } catch (e) { /* ignore */ } }
+
+        // Render frame awal hitam agar stream kanvas segera memiliki data frame valid
+        cctx.fillStyle = '#000';
+        cctx.fillRect(0, 0, comp.width, comp.height);
+        if (manualFrames) { try { vTrack.requestFrame(); } catch (e) { /* ignore */ } }
 
         // Rekaman HARUS hidup dulu, baru audio dijadwalkan: kalau dibalik, awal VO terpotong
         // dan seluruh video bergeser (subtitle tampak telat).

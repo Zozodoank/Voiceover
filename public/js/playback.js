@@ -16,12 +16,24 @@ function togglePlayMergedVideo() {
         showToast('Belum ada naskah untuk diputar.', 'error');
         return;
     }
+
+    // Bangunkan AudioContext langsung pada interaksi user (kebijakan browser autoplay)
+    const ctx = (typeof audioCtx === 'function') ? audioCtx() : null;
+    if (ctx && ctx.state === 'suspended') {
+        try { ctx.resume(); } catch (e) { /* ignore */ }
+    }
+
     isPlayingMerged = true;
     btnText.innerText = 'Jeda';
     icon.className = 'fa-solid fa-pause';
     showToast('Memutar video dengan voice over dan subtitle...', 'info');
     startMergedPlayback().catch((e) => {
-        showToast('Gagal memutar video. Silakan coba lagi.', 'error');
+        const msg = String((e && e.message) || e);
+        if (msg.indexOf('audio_missing:') === 0) {
+            showToast('Suara adegan ' + msg.split(':')[1] + ' belum siap. Coba tekan Putar sekali lagi.', 'error');
+        } else {
+            showToast('Gagal memutar video. Silakan coba lagi.', 'error');
+        }
         resetPlayBtn();
     });
 }

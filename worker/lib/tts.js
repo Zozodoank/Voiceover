@@ -39,12 +39,19 @@ export function isKnownTier(tier) {
 }
 
 /** Rantai model untuk satu tier: model utama + fallback (env TTS_FALLBACK_ORDER, pisahkan koma). */
+const DEFAULT_TIER_FALLBACKS = {
+    'tier-normal': ['gemini-3.1-flash-tts-preview', 'gemini-3.8-flash-tts'],
+    'tier-sedang': ['gemini-2.5-flash-preview-tts', 'gemini-3.8-flash-tts'],
+    'tier-tinggi': ['gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts'],
+};
+
 export function tierModels(env, tier) {
     const key = TIER_MODEL_ENV[tier];
     const primary = (key && env && env[key]) || DEFAULT_TIER_MODEL[tier] || DEFAULT_TIER_MODEL['tier-normal'];
     const extra = String((env && env.TTS_FALLBACK_ORDER) || '')
         .split(',').map(s => s.trim()).filter(Boolean);
-    return [...new Set([primary, ...extra])];
+    const fallbacks = extra.length ? extra : (DEFAULT_TIER_FALLBACKS[tier] || []);
+    return [...new Set([primary, ...fallbacks])];
 }
 
 function ttsTimeout(env) {
@@ -157,9 +164,6 @@ function isWavContainer(bytes) {
         && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46;
 }
 
-// Di-set false sekali bila model menolak field systemInstruction (hindari 400 berulang).
-let _systemInstructionSupported = true;
-
 /** Jeda sebelum percobaan ulang: hormati Retry-After, jika tidak ada pakai backoff terjadwal. */
 function retryDelay(res, attempt) {
     const ra = Number(res && res.headers && res.headers.get('Retry-After'));
@@ -217,17 +221,14 @@ function base64ToBytes(b64) {
  * Satu panggilan Gemini TTS ke satu model. Melempar Error ber-.status untuk HTTP gagal;
  * 429/503 diulang dengan backoff (menghormati Retry-After).
  */
-async function callGeminiTts(env, model, { text, voiceName, emotion }, useSystemInstruction, timeoutMs) {
+async function callGeminiTts(env, model, { text, voiceName, emotion }, timeoutMs) {
     const body = {
-        contents: [{ parts: [{ text: useSystemInstruction ? text : stylePrompt(text, emotion, env) }] }],
+        contents: [{ parts: [{ text: stylePrompt(text, emotion, env) }] }],
         generationConfig: {
             responseModalities: ['AUDIO'],
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
         },
     };
-    if (useSystemInstruction) {
-        body.systemInstruction = { parts: [{ text: buildTtsStyle(emotion, env) }] };
-    }
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`;
     let lastErr = null;
@@ -272,17 +273,7 @@ export async function synthesizeGemini(env, { text, voiceName, emotion, tier }) 
             break;
         }
         try {
-            let data;
-            if (_systemInstructionSupported) {
-                try {
-                    data = await callGeminiTts(env, model, { text, voiceName, emotion }, true, remaining);
-                } catch (e) {
-                    // Model menolak systemInstruction: matikan permanen untuk proses ini, ulangi tanpa field itu.
-                    if (e && e.status === 400) _systemInstructionSupported = false;
-                    else throw e;
-                }
-            }
-            if (!data) data = await callGeminiTts(env, model, { text, voiceName, emotion }, false, deadline - Date.now());
+            const data = await callGeminiTts(env, model, { text, voiceName, emotion }, remaining);
 
             const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
             const audioPart = parts.find(p => p && p.inlineData && p.inlineData.data);
