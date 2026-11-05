@@ -164,9 +164,14 @@ export function buildTtsStyle(emotion, env) {
         + 'jeda napas alami; jangan datar dan jangan berteriak. Nada adegan ini: ' + nuance + '.';
 }
 
-/** Gaya yang ditanam di dalam prompt teks (dipakai bila model menolak systemInstruction). */
-export function stylePrompt(text, emotion, env) {
-    return buildTtsStyle(emotion, env) + ' Ucapkan kalimat berikut apa adanya: ' + text;
+/**
+ * Teks yang dikirim ke model TTS: HANYA teks naskah murni.
+ * Catatan penting: menyisipkan kalimat instruksi ("Kamu pengisi suara... Ucapkan kalimat berikut:")
+ * ke dalam contents.parts[].text membuat model Gemini TTS ikut membacakan instruksi tersebut keras-keras
+ * selama ~20 detik di awal audio.
+ */
+export function stylePrompt(text) {
+    return String(text || '').trim();
 }
 
 function sleep(ms) {
@@ -177,6 +182,24 @@ function sleep(ms) {
 function isWavContainer(bytes) {
     return !!bytes && bytes.byteLength > 12
         && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46;
+}
+
+/** Bersihkan chunk metadata trailing (mis. C2PA SynthID) setelah blok PCM data pada container WAV. */
+function cleanWavContainer(bytes) {
+    if (!isWavContainer(bytes) || bytes.byteLength < 44) return bytes;
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const dataTag = String.fromCharCode(bytes[36], bytes[37], bytes[38], bytes[39]);
+    if (dataTag !== 'data') return bytes;
+    const dataSize = view.getUint32(40, true);
+    const end = 44 + dataSize;
+    if (dataSize > 0 && end < bytes.byteLength) {
+        const out = new Uint8Array(end);
+        out.set(bytes.subarray(0, end), 0);
+        const outView = new DataView(out.buffer, out.byteOffset, out.byteLength);
+        outView.setUint32(4, 36 + dataSize, true);
+        return out;
+    }
+    return bytes;
 }
 
 /** Jeda sebelum percobaan ulang: hormati Retry-After, jika tidak ada pakai backoff terjadwal. */
@@ -304,7 +327,7 @@ export async function synthesizeGemini(env, { text, voiceName, emotion, tier }) 
             console.log(`TTS ok tier=${tier} model=${model} mime=${mime || '-'} ms=${Date.now() - (deadline - chainBudget(env))}`);
             // Sebagian model (mis. 3.8) sudah mengembalikan container WAV: membungkusnya lagi merusak audio.
             if (/wav/i.test(mime) || isWavContainer(bytes)) {
-                return { bytes, contentType: 'audio/wav', provider: 'gemini', model };
+                return { bytes: cleanWavContainer(bytes), contentType: 'audio/wav', provider: 'gemini', model };
             }
             const { sampleRate, channels } = parsePcmMeta(mime);
             return { bytes: pcmToWav(bytes, sampleRate, channels), contentType: 'audio/wav', provider: 'gemini', model };

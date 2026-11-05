@@ -96,6 +96,10 @@ function planTimeline(scenes, audios, videoDuration) {
     const list = scenes || [];
     const videoTotal = Number(videoDuration) > 0 ? Number(videoDuration) : 0;
     const anchored = hasSceneWindows(list);
+    // Audio hasil sintesis nyata (_videoAudio) dikunci pada tempo 1.0x agar pitch suara TIDAK naik
+    // (AudioBufferSourceNode.playbackRate > 1 menaikkan frekuensi/tone suara seperti chipmunk).
+    const isRealTtsAudio = !!(_videoAudio && _videoAudio.sig && _videoAudio.sig === sceneAudioSignature());
+    const maxTempo = isRealTtsAudio ? 1.0 : SCENE_MAX_TEMPO;
     const segments = [];
     let prevEnd = 0;
     for (let i = 0; i < list.length; i++) {
@@ -112,7 +116,7 @@ function planTimeline(scenes, audios, videoDuration) {
             avail = audioDur;
             start = segments.length === 0 ? 0 : prevEnd + SCENE_GAP_S;
         }
-        const rate = Math.min(SCENE_MAX_TEMPO, Math.max(1, audioDur / avail));
+        const rate = Math.min(maxTempo, Math.max(1, audioDur / avail));
         const dur = audioDur / rate;
         const end = start + dur;
         segments.push({
@@ -322,10 +326,12 @@ function splitAudioBufferByScenes(fullBuffer, scenes) {
         if (a > peak) peak = a;
     }
 
-    const winSamples = Math.max(16, Math.floor(rate * 0.03)); // jendela energi 30ms
+    // Jendela energi 120ms (> durasi penutupan konsonan [t]/[k]/[p] 30-50ms) agar pemotongan
+    // selalu jatuh di jeda antar-kalimat sejati (400-600ms), bukan di tengah kata.
+    const winSamples = Math.max(32, Math.floor(rate * 0.12));
     const searchRadius = Math.min(
-        Math.floor(rate * 0.45),
-        Math.floor(totalSamples / (count * 2.4))
+        Math.floor(rate * 0.90),
+        Math.floor(totalSamples / (count * 1.8))
     );
 
     const cuts = [0];
@@ -338,15 +344,16 @@ function splitAudioBufferByScenes(fullBuffer, scenes) {
             const lo = Math.max(cuts[i] + winSamples, expected - searchRadius);
             const hi = Math.min(totalSamples - winSamples * (count - i), expected + searchRadius);
             let minEnergy = Infinity;
-            const step = Math.max(1, Math.floor(winSamples / 4));
+            const step = Math.max(1, Math.floor(winSamples / 8));
             for (let pos = lo; pos <= hi; pos += step) {
                 let sum = 0;
                 for (let k = 0; k < winSamples && (pos + k) < totalSamples; k++) {
                     const v = data[pos + k];
                     sum += v * v;
                 }
-                // Penalti jarak halus agar tetap dekat proporsi kata jika ada beberapa lembah hening
-                const distPenalty = 1 + 0.35 * Math.abs(pos - expected) / Math.max(1, searchRadius);
+                // Penalti jarak kuadratik agar memilih jeda kalimat terdekat dari proporsi kata
+                const normDist = Math.abs(pos - expected) / Math.max(1, searchRadius);
+                const distPenalty = 1 + 2.5 * normDist * normDist;
                 const score = sum * distPenalty;
                 if (score < minEnergy) {
                     minEnergy = score;
@@ -367,6 +374,7 @@ function splitAudioBufferByScenes(fullBuffer, scenes) {
     }
 
     const ctx = audioCtx();
+    const fadeSamples = Math.min(Math.floor(rate * 0.012), 288); // 12ms micro-fade cegah klik
     const out = [];
     for (let i = 0; i < count; i++) {
         const s0 = cuts[i];
@@ -374,7 +382,15 @@ function splitAudioBufferByScenes(fullBuffer, scenes) {
         const len = s1 - s0;
         const rawSlice = ctx.createBuffer(trimmed.numberOfChannels, len, rate);
         for (let ch = 0; ch < trimmed.numberOfChannels; ch++) {
-            rawSlice.copyToChannel(trimmed.getChannelData(ch).subarray(s0, s1), ch);
+            const sub = trimmed.getChannelData(ch).subarray(s0, s1);
+            const dst = rawSlice.getChannelData(ch);
+            dst.set(sub);
+            const fLen = Math.min(fadeSamples, Math.floor(len / 4));
+            for (let k = 0; k < fLen; k++) {
+                const g = k / fLen;
+                dst[k] *= g;
+                dst[len - 1 - k] *= g;
+            }
         }
         const slice = peak > 0 ? trimSilence(rawSlice) : rawSlice;
         out.push({
