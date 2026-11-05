@@ -29,7 +29,7 @@ function togglePlayMergedVideo() {
     showToast('Memutar video dengan voice over dan subtitle...', 'info');
     startMergedPlayback().catch((e) => {
         console.error('Play video error:', e);
-        showToast('Gagal memutar video. Silakan coba lagi.', 'error');
+        showToast('Gagal memutar video: ' + ((e && e.message) || 'Silakan coba lagi.'), 'error');
         resetPlayBtn();
     });
 }
@@ -56,13 +56,10 @@ async function downloadSrtFile() {
         return;
     }
     // Subtitle harus memakai waktu audio yang sebenarnya -> pastikan audio adegan sudah siap.
-    showToast('Menyiapkan suara video…', 'info');
     try {
         await ensureSceneAudios();
-        assertAllAudio();
     } catch (e) {
-        showToast('Gagal menyiapkan suara video. Silakan coba lagi.', 'error');
-        return;
+        console.warn('SRT fallback to visual timeline:', e && e.message);
     }
     const timeline = (typeof window.getSceneTimeline === 'function') ? window.getSceneTimeline() : buildTimeline();
     if (!timeline.segments.length) {

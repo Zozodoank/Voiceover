@@ -34,7 +34,7 @@ AIVENE_BASE_URL = "https://api.aivene.com/v1"
 TTS_MODEL_NORMAL = "gemini-3.8-flash-lite-tts"     # tier Normal
 TTS_MODEL_SEDANG = "gemini-3.1-flash-tts-preview"     # tier Sedang
 TTS_MODEL_TINGGI = "gemini-3.8-flash-tts"             # tier Tinggi (utama)
-TTS_FALLBACK_ORDER = "gemini-3.8-flash-lite-tts,gemini-3.8-flash-tts,gemini-3.1-flash-tts-preview,gemini-2.5-flash-preview-tts"  # fallback bila model tier gagal/429
+TTS_FALLBACK_ORDER = "gemini-3.8-flash-lite-tts,gemini-3.8-flash-tts,gemini-3.1-flash-tts-preview,gemini-2.5-flash-preview-tts,gemini-2.5-pro-preview-tts"  # fallback bila model tier gagal/429
 TTS_STYLE_MODE = "natural"                            # natural = penyampaian realistis; energetic = gaya lama (berteriak)
 TTS_TIMEOUT_MS = "15000"                              # batas satu panggilan TTS (model 3.x lebih lambat)
 TTS_ALLOW_DEGRADE = "false"                           # true = izinkan fallback AIVene (kualitas lebih rendah)

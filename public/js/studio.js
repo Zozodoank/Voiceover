@@ -39,6 +39,14 @@ async function initiateCommercialGeneration() {
         return;
     }
 
+    // Buka kunci AudioContext selagi klik tombol masih aktif (kebijakan browser autoplay)
+    if (typeof audioCtx === 'function') {
+        try {
+            const ctx = audioCtx();
+            if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+        } catch (e) { /* ignore */ }
+    }
+
     const selectedModelRadio = document.querySelector('input[name="ttsModel"]:checked');
     const modelValue = selectedModelRadio.value;
     const modelPrice = parseInt(selectedModelRadio.getAttribute('data-price'), 10);

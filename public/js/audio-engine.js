@@ -140,6 +140,14 @@ function audioCtx() {
     return _audioCtx;
 }
 
+/** Resume AudioContext dengan batas tunggu pendek agar tidak pernah menggantung saat gesture kedaluwarsa. */
+async function resumeAudioCtx(ctx) {
+    if (!ctx || ctx.state !== 'suspended') return;
+    try {
+        await Promise.race([ctx.resume(), sleep(250)]);
+    } catch (e) { /* ignore */ }
+}
+
 /** Signature voice + tier + isi naskah + jendela visual (deteksi perlu prerender ulang tidak). */
 function sceneAudioSignature() {
     const v = (typeof getSelectedVoice === 'function') ? getSelectedVoice().name : '';
@@ -154,12 +162,9 @@ function videoAudioSignature() {
     return sceneAudioSignature();
 }
 
-/** Decode audio blob menjadi AudioBuffer dengan kompatibilitas lintas-browser. */
+/** Decode audio blob menjadi AudioBuffer dengan kompatibilitas lintas-browser (tanpa butuh ctx running). */
 async function decodeAudioBlob(blob) {
     const ctx = audioCtx();
-    if (ctx && ctx.state === 'suspended') {
-        try { await ctx.resume(); } catch (e) { /* ignore */ }
-    }
     const arrayBuffer = await blob.arrayBuffer();
     return new Promise((resolve, reject) => {
         let settled = false;
@@ -680,13 +685,22 @@ async function startMergedPlayback() {
 
     stopEverything();
     const myTok = ++_playToken;
-    const ctx = audioCtx(); ctx._tok = myTok;
+    const ctx = audioCtx();
+    await resumeAudioCtx(ctx);
+    if (_playToken !== myTok) return;
+    ctx._tok = myTok;
 
     const run = scheduleScenes(ctx, [ctx.destination], 0.12);
     const clock = createRunClock(ctx, run);
     const src = getVisualSource();
     if (src.type === 'video' && src.el) {
-        try { src.el.loop = false; src.el.muted = true; src.el.currentTime = 0; await src.el.play(); } catch (e) { /* autoplay */ }
+        try {
+            src.el.loop = false;
+            src.el.muted = true;
+            src.el.currentTime = 0;
+            const p = src.el.play();
+            if (p && typeof p.catch === 'function') p.catch(() => { /* autoplay */ });
+        } catch (e) { /* autoplay */ }
     }
 
     const subOn = subtitlesEnabled();
@@ -742,7 +756,7 @@ async function exportMergedVideoWebM() {
         showToast('Browser ini tidak mendukung pembuatan video langsung. Silakan gunakan unduh file .SRT.', 'error');
         return;
     }
-    if (!navigator.mediaDevices || !HTMLCanvasElement.prototype.captureStream) {
+    if (!HTMLCanvasElement.prototype.captureStream) {
         showToast('Pembuatan video tidak didukung pada browser ini. Silakan gunakan opsi unduh .SRT.', 'error');
         return;
     }
@@ -753,9 +767,7 @@ async function exportMergedVideoWebM() {
     };
 
     const ctx = audioCtx();
-    if (ctx && ctx.state === 'suspended') {
-        try { await ctx.resume(); } catch (e) { /* ignore */ }
-    }
+    await resumeAudioCtx(ctx);
 
     setBusy(true, 'Menyiapkan suara…');
     stopEverything();
@@ -780,49 +792,29 @@ async function exportMergedVideoWebM() {
         } catch (e) {
             stream = comp.captureStream();
         }
+        const vTrack = stream.getVideoTracks()[0];
         dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
 
         const chunks = [];
-        const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_500_000 });
+        let recorder;
+        try {
+            recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_500_000 });
+        } catch (e) {
+            try {
+                recorder = new MediaRecorder(stream, { mimeType });
+            } catch (e2) {
+                recorder = new MediaRecorder(stream);
+            }
+        }
+        const actualMime = recorder.mimeType || mimeType || 'video/webm';
         recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
 
-        const done = new Promise((resolve) => { recorder.onstop = resolve; });
-        const started = new Promise((resolve, reject) => {
-            let settled = false;
-            const settle = (fn, arg) => {
-                if (settled) return;
-                settled = true;
-                clearTimeout(t);
-                clearInterval(poll);
-                fn(arg);
-            };
-            const t = setTimeout(() => {
-                try { recorder.stop(); } catch (e) { /* ignore */ }
-                stream.getTracks().forEach(tr => { try { tr.stop(); } catch (e) { /* ignore */ } });
-                settle(reject, new Error('Perekam tidak mulai (timeout).'));
-            }, RECORDER_START_TIMEOUT_MS);
-            const poll = setInterval(() => {
-                if (recorder.state === 'recording') settle(resolve);
-            }, 100);
-            recorder.onstart = () => settle(resolve);
+        let resolveDone;
+        const done = new Promise((resolve) => {
+            resolveDone = resolve;
+            recorder.onstop = () => resolve();
+            recorder.onerror = () => resolve();
         });
-
-        const name = sanitizeFile((document.getElementById('productNameInput') || {}).value || 'naskah');
-        let stopped = false;
-        let run = null;
-        let kaOsc = null;
-        let watchdog = 0;
-
-        const finish = () => {
-            if (stopped) return; stopped = true;
-            if (watchdog) { clearTimeout(watchdog); watchdog = 0; }
-            if (_rafId) cancelAnimationFrame(_rafId);
-            if (run) run.stop();
-            if (kaOsc) { try { kaOsc.stop(); } catch (e) { /* ignore */ } }
-            try { recorder.stop(); } catch (e) { /* ignore */ }
-            stream.getTracks().forEach(t => { try { t.stop(); } catch (e) { /* ignore */ } });
-            restoreVisualAfterPlayback();
-        };
 
         // Siapkan video di detik 0 sebelum perekam menyala agar frame pertama langsung berisi visual produk
         const vis = getVisualSource();
@@ -841,13 +833,77 @@ async function exportMergedVideoWebM() {
             } catch (e) { /* ignore */ }
         }
 
+        // Nyalakan osilator keep-alive SEBELUM recorder.start() agar track audio MediaStreamDestination
+        // langsung memancarkan paket audio sejak milidetik ke-0 (mencegah muxer menunggu tanpa batas).
+        let kaOsc = null;
+        try {
+            const kaGain = ctx.createGain();
+            kaGain.gain.value = 0.00001;
+            kaOsc = ctx.createOscillator();
+            kaOsc.type = 'sine';
+            kaOsc.frequency.value = 1;
+            kaOsc.connect(kaGain);
+            kaGain.connect(dest);
+            kaOsc.start();
+        } catch (e) { /* ignore */ }
+
         cctx.fillStyle = '#000';
         cctx.fillRect(0, 0, comp.width, comp.height);
         try { drawFrame(cctx, comp, 0, null); } catch (e) { /* ignore */ }
+        if (vTrack && typeof vTrack.requestFrame === 'function') {
+            try { vTrack.requestFrame(); } catch (e) { /* ignore */ }
+        }
+
+        const started = new Promise((resolve, reject) => {
+            let settled = false;
+            const settle = (fn, arg) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(t);
+                clearInterval(poll);
+                fn(arg);
+            };
+            const t = setTimeout(() => {
+                try { recorder.stop(); } catch (e) { /* ignore */ }
+                stream.getTracks().forEach(tr => { try { tr.stop(); } catch (e) { /* ignore */ } });
+                settle(reject, new Error('Perekam tidak mulai (timeout).'));
+            }, RECORDER_START_TIMEOUT_MS);
+            const poll = setInterval(() => {
+                if (recorder.state === 'recording') {
+                    settle(resolve);
+                    return;
+                }
+                try { drawFrame(cctx, comp, 0, null); } catch (e) { /* ignore */ }
+            }, 80);
+            recorder.onstart = () => settle(resolve);
+        });
+
+        const name = sanitizeFile((document.getElementById('productNameInput') || {}).value || 'naskah');
+        let stopped = false;
+        let run = null;
+        let watchdog = 0;
+        let exportTimer = 0;
+
+        const finish = () => {
+            if (stopped) return; stopped = true;
+            if (watchdog) { clearTimeout(watchdog); watchdog = 0; }
+            if (exportTimer) { clearTimeout(exportTimer); exportTimer = 0; }
+            if (_rafId) { cancelAnimationFrame(_rafId); _rafId = 0; }
+            if (run) run.stop();
+            if (kaOsc) { try { kaOsc.stop(); } catch (e) { /* ignore */ } }
+            if (recorder.state === 'recording') {
+                try { recorder.requestData(); } catch (e) { /* ignore */ }
+                try { recorder.stop(); } catch (e) { resolveDone(); }
+                setTimeout(() => resolveDone(), 1500);
+            } else {
+                resolveDone();
+            }
+            restoreVisualAfterPlayback();
+        };
 
         recorder.start(200);
         await started;
-        if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (e) { /* ignore */ } }
+        await resumeAudioCtx(ctx);
         if (_playToken !== myTok || stopped) { finish(); return; }
 
         run = scheduleScenes(ctx, [dest], LEAD_IN_S);
@@ -856,20 +912,32 @@ async function exportMergedVideoWebM() {
 
         watchdog = setTimeout(finish, (LEAD_IN_S + run.timeline.total + 5) * 1000);
 
-        const kaGain = ctx.createGain(); kaGain.gain.value = 0;
-        kaOsc = ctx.createOscillator(); kaOsc.type = 'sine'; kaOsc.frequency.value = 1;
-        kaOsc.connect(kaGain); kaGain.connect(dest);
-        kaOsc.start(run.startTime); kaOsc.stop(run.startTime + run.timeline.total + 0.5);
-
         const frameMs = 1000 / EXPORT_FPS;
         let lastFrameAt = 0;
-        (function draw() {
-            if (_playToken !== myTok) { finish(); return; }
+        let lastPct = -1;
+        function scheduleNextTick() {
+            if (stopped || _playToken !== myTok) return;
+            if (exportTimer) clearTimeout(exportTimer);
+            exportTimer = setTimeout(draw, Math.max(8, Math.floor(frameMs / 2)));
+            if (_rafId) cancelAnimationFrame(_rafId);
+            _rafId = requestAnimationFrame(draw);
+        }
+        function draw() {
+            if (_playToken !== myTok || stopped) { finish(); return; }
             const elapsed = clock();
             if (elapsed >= run.timeline.total) { setTimeout(finish, 250); return; }
             const now = performance.now();
-            if (now - lastFrameAt < frameMs - 1) { _rafId = requestAnimationFrame(draw); return; }
+            if (now - lastFrameAt < frameMs - 1) {
+                scheduleNextTick();
+                return;
+            }
             lastFrameAt = now;
+
+            const pct = Math.min(99, Math.max(0, Math.round((elapsed / Math.max(1, run.timeline.total)) * 100)));
+            if (pct !== lastPct && pct % 10 === 0) {
+                lastPct = pct;
+                setBusy(true, `Merekam ${pct}%…`);
+            }
 
             const segIdx = subtitleIndexAt(run.timeline.segments, Math.max(0, elapsed));
             const seg = segIdx >= 0 ? run.timeline.segments[segIdx] : null;
@@ -881,13 +949,16 @@ async function exportMergedVideoWebM() {
             if (vis.type === 'video' && vis.el) {
                 if (!videoStarted && t > 0) {
                     videoStarted = true;
-                    try { vis.el.currentTime = 0; vis.el.play(); } catch (e) { /* ignore */ }
+                    try { vis.el.play(); } catch (e) { /* ignore */ }
                 } else if (videoStarted) {
                     syncVisualToClock(vis.el, t, VISUAL_DRIFT_TOL_EXPORT_S);
                 }
             }
             try {
                 drawFrame(cctx, comp, sceneIdx, sub);
+                if (vTrack && typeof vTrack.requestFrame === 'function') {
+                    try { vTrack.requestFrame(); } catch (e) { /* ignore */ }
+                }
             } catch (err) {
                 if (err && err.name === 'SecurityError') {
                     finish();
@@ -895,18 +966,21 @@ async function exportMergedVideoWebM() {
                     return;
                 }
             }
-            _rafId = requestAnimationFrame(draw);
-        })();
+            scheduleNextTick();
+        }
+        draw();
 
         await done;
-        const blob = new Blob(chunks, { type: mimeType });
+        stream.getTracks().forEach(t => { try { t.stop(); } catch (e) { /* ignore */ } });
+
+        const blob = new Blob(chunks, { type: actualMime });
         if (!blob.size) {
             showToast('Gagal memproses video gabungan. Silakan unduh naskah .SRT.', 'error');
             return;
         }
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const ext = mimeType.indexOf('mp4') !== -1 ? 'mp4' : 'webm';
+        const ext = actualMime.indexOf('mp4') !== -1 ? 'mp4' : 'webm';
         a.href = url; a.download = `VO_${name}_${Date.now()}.${ext}`; a.style.display = 'none';
         document.body.appendChild(a); a.click();
         setTimeout(() => { try { document.body.removeChild(a); } catch (e) { /* ignore */ } URL.revokeObjectURL(url); }, 4000);
@@ -923,9 +997,8 @@ async function exportMergedVideoWebM() {
 
 function pickWebmMime() {
     const cands = [
-        'video/webm;codecs=vp9,opus',
         'video/webm;codecs=vp8,opus',
-        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp9,opus',
         'video/webm',
         'video/mp4;codecs=avc1,mp4a.40.2',
         'video/mp4'
@@ -975,8 +1048,8 @@ function drawFrame(cctx, comp, idx, sub) {
     const scene = (generatedScenesData || [])[idx] || {};
     const vis = getVisualSource();
     cctx.fillStyle = '#000'; cctx.fillRect(0, 0, comp.width, comp.height);
-    if (vis.type === 'video' && vis.el && vis.el.readyState >= 2) {
-        drawCover(cctx, vis.el, comp.width, comp.height);
+    if (vis.type === 'video' && vis.el && (vis.el.readyState >= 2 || vis.el.videoWidth > 0)) {
+        try { drawCover(cctx, vis.el, comp.width, comp.height); } catch (e) { /* ignore */ }
     }
     cctx.fillStyle = 'rgba(0,0,0,0.55)';
     roundRect(cctx, 24, 24, 520, 64, 32); cctx.fill();

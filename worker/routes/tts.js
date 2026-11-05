@@ -8,7 +8,8 @@ import { listVoices, isKnownVoice, isKnownTier, synthesizeVoice, TTS_MAX_TEXT } 
 const router = new Hono();
 
 const DEFAULT_SAMPLE = 'Halo sobat belanja! Ini contoh suara saya.';
-const TTS_CACHE_TTL = 60 * 60 * 24 * 30; // 30 hari
+const TTS_CACHE_TTL = 60 * 60 * 24 * 30; // 30 hari (audio Gemini TTS)
+const TTS_FALLBACK_CACHE_TTL = 60 * 60;  // 1 jam (audio fallback saat kuota harian Gemini TTS habis)
 
 /** Hash SHA-256 (hex, 32 karakter) - kunci cache tanpa menyimpan naskah user di KV. */
 async function hashText(text) {
@@ -19,18 +20,11 @@ async function hashText(text) {
     return hex.slice(0, 32);
 }
 
-function degradeEnabled(env) {
-    return String(env.TTS_ALLOW_DEGRADE || 'false').toLowerCase() === 'true';
-}
-
 /** GET /api/tts/voices - daftar voice TTS aktif untuk pemilih di UI (tanpa nama model/engine). */
 router.get('/tts/voices', (c) => c.json({ voices: listVoices(c.env) }));
 
-/** POST /api/tts/preview {voiceName, text?, emotion?, tier?} - audio adegan (WAV). */
+/** POST /api/tts/preview {voiceName, text?, emotion?, tier?} - audio adegan (WAV/MP3). */
 router.post('/tts/preview', requireAuth, async (c) => {
-    if (!c.env.GEMINI_API_KEY) {
-        return c.json({ error: 'tts_unavailable', message: 'Layanan suara sedang dalam pemeliharaan.' }, 503);
-    }
     const body = await c.req.json().catch(() => ({}));
     const voiceName = String(body.voiceName || '');
     if (!isKnownVoice(c.env, voiceName)) {
@@ -71,10 +65,11 @@ router.post('/tts/preview', requireAuth, async (c) => {
 
     try {
         const { bytes, contentType, provider } = await synthesizeVoice(c.env, { text, voiceName, emotion, tier });
+        const ttl = provider === 'gemini' ? TTS_CACHE_TTL : TTS_FALLBACK_CACHE_TTL;
         try {
             await c.env.ORDERS.put(cacheKey, bytes, {
                 metadata: { contentType, provider: provider || 'gemini' },
-                expirationTtl: TTS_CACHE_TTL,
+                expirationTtl: ttl,
             });
         } catch (e) {
             console.error('TTS cache write failed:', e && e.message ? e.message : String(e));

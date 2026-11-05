@@ -40,9 +40,9 @@ export function isKnownTier(tier) {
 
 /** Rantai model untuk satu tier: model utama + fallback (env TTS_FALLBACK_ORDER, pisahkan koma). */
 const DEFAULT_TIER_FALLBACKS = {
-    'tier-normal': ['gemini-3.1-flash-tts-preview', 'gemini-3.8-flash-tts', 'gemini-2.5-flash-preview-tts'],
-    'tier-sedang': ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts', 'gemini-2.5-flash-preview-tts'],
-    'tier-tinggi': ['gemini-3.1-flash-tts-preview', 'gemini-3.8-flash-lite-tts', 'gemini-2.5-flash-preview-tts'],
+    'tier-normal': ['gemini-3.1-flash-tts-preview', 'gemini-3.8-flash-tts', 'gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts'],
+    'tier-sedang': ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts', 'gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts'],
+    'tier-tinggi': ['gemini-3.1-flash-tts-preview', 'gemini-3.8-flash-lite-tts', 'gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts'],
 };
 
 export function tierModels(env, tier) {
@@ -307,16 +307,161 @@ export async function synthesizeGemini(env, { text, voiceName, emotion, tier }) 
     throw err;
 }
 
+/** Pecah teks menjadi potongan per kalimat (maks maxLen karakter) agar jeda antar adegan terjaga. */
+function splitTextIntoSentenceChunks(text, maxLen = 175) {
+    const clean = String(text || '').trim();
+    if (!clean) return [];
+    const sentences = (clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [clean])
+        .map(s => s.trim())
+        .filter(Boolean);
+    const chunks = [];
+    for (const s of sentences) {
+        if (s.length <= maxLen) {
+            chunks.push(s);
+            continue;
+        }
+        const words = s.split(/\s+/).filter(Boolean);
+        let cur = '';
+        for (const w of words) {
+            if ((cur + ' ' + w).trim().length > maxLen) {
+                if (cur) chunks.push(cur.trim());
+                cur = w;
+            } else {
+                cur = cur ? cur + ' ' + w : w;
+            }
+        }
+        if (cur) chunks.push(cur.trim());
+    }
+    return chunks;
+}
+
+/** Buang header ID3v2 pada awal chunk MP3 agar penggabungan antar kalimat menghasilkan stream CBR murni. */
+function stripMp3Id3Header(bytes) {
+    if (!bytes || bytes.byteLength < 10) return bytes;
+    if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
+        const size = ((bytes[6] & 0x7f) << 21)
+            | ((bytes[7] & 0x7f) << 14)
+            | ((bytes[8] & 0x7f) << 7)
+            | (bytes[9] & 0x7f);
+        const offset = 10 + size;
+        if (offset < bytes.byteLength) return bytes.subarray(offset);
+    }
+    return bytes;
+}
+
+/** Gabungkan beberapa Uint8Array menjadi satu Uint8Array utuh. */
+function concatUint8Arrays(arrays) {
+    if (arrays.length === 1) return arrays[0];
+    const total = arrays.reduce((acc, b) => acc + b.byteLength, 0);
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const b of arrays) {
+        merged.set(b, offset);
+        offset += b.byteLength;
+    }
+    return merged;
+}
+
 /**
- * Router utama suara VO: Murni Gemini TTS (dengan rantai model fallback Gemini per tier).
- * 1 video = 1 kali panggil TTS Gemini untuk seluruh naskah video.
- * Mengembalikan { bytes, contentType, provider: 'gemini', model } atau melempar Error.
+ * Fallback 1: Google Translate TTS (Bahasa Indonesia, CBR MP3 tanpa ID3 header).
+ * Dipotong per kalimat agar lembah hening antar adegan tepat sasaran saat dipecah di browser.
+ */
+export async function synthesizeGoogleTranslateTts({ text, lang = 'id' }) {
+    const chunks = splitTextIntoSentenceChunks(text, 175);
+    if (!chunks.length) throw new Error('Teks TTS kosong');
+
+    const buffers = await Promise.all(chunks.map(async (chunk) => {
+        const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${encodeURIComponent(lang)}&client=tw-ob&q=${encodeURIComponent(chunk)}`;
+        const res = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+                'Accept': '*/*',
+            },
+            signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) throw new Error(`Google Translate TTS HTTP ${res.status}`);
+        const ab = await res.arrayBuffer();
+        const bytes = stripMp3Id3Header(new Uint8Array(ab));
+        if (!bytes.byteLength) throw new Error('Google Translate TTS chunk kosong');
+        return bytes;
+    }));
+
+    return {
+        bytes: concatUint8Arrays(buffers),
+        contentType: 'audio/mpeg',
+        provider: 'google-translate',
+        model: 'translate-tts',
+    };
+}
+
+/**
+ * Fallback 2: TikTok Indonesian Affiliate TTS (id_001, CBR MP3 dengan strip ID3 header).
+ */
+export async function synthesizeTikTokTts({ text, voice = 'id_001' }) {
+    const chunks = splitTextIntoSentenceChunks(text, 200);
+    if (!chunks.length) throw new Error('Teks TTS kosong');
+
+    const buffers = await Promise.all(chunks.map(async (chunk) => {
+        const res = await fetch('https://tiktok-tts.weilnet.workers.dev/api/generation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: chunk, voice }),
+            signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) throw new Error(`TikTok TTS HTTP ${res.status}`);
+        const j = await res.json().catch(() => null);
+        if (!j || !j.data) throw new Error('TikTok TTS data kosong');
+        const bytes = stripMp3Id3Header(base64ToBytes(j.data));
+        if (!bytes.byteLength) throw new Error('TikTok TTS chunk kosong');
+        return bytes;
+    }));
+
+    return {
+        bytes: concatUint8Arrays(buffers),
+        contentType: 'audio/mpeg',
+        provider: 'tiktok-tts',
+        model: voice,
+    };
+}
+
+/**
+ * Router utama suara VO: Gemini TTS (dengan rantai model fallback Gemini per tier).
+ * Bila kuota harian Free Tier Gemini TTS (10 req/hari/model -> 429) habis atau server 503,
+ * otomatis jatuh ke Google Translate TTS / TikTok Indonesian TTS agar Putar & Unduh selalu jalan.
  */
 export async function synthesizeVoice(env, { text, voiceName, emotion, tier }) {
-    if (!env || !env.GEMINI_API_KEY) {
-        const err = new Error('GEMINI_API_KEY belum dikonfigurasi di server.');
-        err.status = 503;
-        throw err;
+    let lastError = null;
+    if (env && env.GEMINI_API_KEY) {
+        try {
+            return await synthesizeGemini(env, { text, voiceName, emotion, tier });
+        } catch (e) {
+            lastError = e;
+            console.warn(`Gemini TTS tier=${tier} gagal (${e && e.message ? e.message : e}). Beralih ke fallback TTS...`);
+        }
+    } else {
+        lastError = new Error('GEMINI_API_KEY belum dikonfigurasi di server.');
+        lastError.status = 503;
     }
-    return await synthesizeGemini(env, { text, voiceName, emotion, tier });
+
+    if (env && String(env.TTS_FALLBACK_DISABLED || 'false').toLowerCase() === 'true') {
+        throw lastError;
+    }
+
+    try {
+        const fb = await synthesizeGoogleTranslateTts({ text, lang: 'id' });
+        console.log(`TTS fallback google-translate sukses (${fb.bytes.byteLength} bytes)`);
+        return fb;
+    } catch (gErr) {
+        console.warn('TTS fallback google-translate gagal:', gErr && gErr.message ? gErr.message : gErr);
+    }
+
+    try {
+        const tt = await synthesizeTikTokTts({ text, voice: 'id_001' });
+        console.log(`TTS fallback tiktok-tts sukses (${tt.bytes.byteLength} bytes)`);
+        return tt;
+    } catch (ttErr) {
+        console.error('TTS fallback tiktok-tts gagal:', ttErr && ttErr.message ? ttErr.message : ttErr);
+    }
+
+    throw lastError || new Error('Tidak ada provider TTS yang berhasil membuat suara');
 }
