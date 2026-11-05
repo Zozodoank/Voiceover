@@ -3,7 +3,7 @@
 // pemutaran ulang / ekspor ulang tidak memanggil Gemini lagi (hemat kuota TTS free tier).
 import { Hono } from 'hono';
 import { requireAuth } from '../lib/middleware.js';
-import { listVoices, isKnownVoice, isKnownTier, synthesizeVoice, TTS_MAX_TEXT } from '../lib/tts.js';
+import { listVoices, isKnownVoice, isKnownTier, normalizeVoiceName, synthesizeVoice, TTS_MAX_TEXT } from '../lib/tts.js';
 
 const router = new Hono();
 
@@ -26,7 +26,7 @@ router.get('/tts/voices', (c) => c.json({ voices: listVoices(c.env) }));
 /** POST /api/tts/preview {voiceName, text?, emotion?, tier?} - audio adegan (WAV/MP3). */
 router.post('/tts/preview', requireAuth, async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    const voiceName = String(body.voiceName || '');
+    const voiceName = normalizeVoiceName(body.voiceName || '');
     if (!isKnownVoice(c.env, voiceName)) {
         return c.json({ error: 'voice_unknown', message: 'Nama voice tidak dikenal.' }, 400);
     }

@@ -12,6 +12,9 @@ exports/
 *.webm
 *.mp4
 *.wav
+!public/audio/
+!public/audio/voices/
+!public/audio/voices/*.wav
 *.srt
 .DS_Store
 Thumbs.db

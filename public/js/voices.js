@@ -3,6 +3,32 @@
 
 let GEMINI_VOICES_CACHE = [];   // diisi dari GET /api/tts/voices (voice Gemini)
 let _previewAudio = null;        // elemen Audio aktif agar tidak tumpang tindih
+let _previewActiveBtn = null;    // tombol pratinjau yang sedang memutar
+
+// Pemetaan alias lama ke file sampel statis resmi Gemini TTS
+const OFFLINE_VOICE_ALIASES = {
+    Despoina: 'Despina',
+    Erato: 'Erinome',
+    Metis: 'Sulafat',
+    Hippolytos: 'Iapetus',
+};
+
+function resetPreviewBtnIcon(btn) {
+    if (!btn) return;
+    const ico = btn.querySelector('i');
+    if (ico) ico.className = 'fa-solid fa-play text-brand-400';
+}
+
+function stopVoicePreview() {
+    if (_previewAudio) {
+        try { _previewAudio.pause(); _previewAudio.currentTime = 0; } catch (e) { /* ignore */ }
+        _previewAudio = null;
+    }
+    if (_previewActiveBtn) {
+        resetPreviewBtnIcon(_previewActiveBtn);
+        _previewActiveBtn = null;
+    }
+}
 
 /** Render daftar voice ke #voicePicker (radio nama="voiceName" + tombol ▶). */
 async function renderVoicePicker() {
@@ -65,13 +91,53 @@ function getSelectedVoice() {
 }
 
 /**
- * Putar pratinjau suara Gemini TTS asli.
+ * Putar pratinjau suara:
+ * - Tanpa parameter `text` (tombol ▶ di daftar suara): memutar file sampel suara Gemini OFFLINE
+ *   (`/audio/voices/<Nama>.wav`) secara instan tanpa memanggil API / tanpa memakan kuota TTS.
+ * - Dengan parameter `text` (cadangan naskah kustom): memanggil `/api/tts/preview`.
  * @param {string} name  nama voice
  * @param {HTMLElement|null} btn  tombol pemicu (untuk state loading), boleh null
- * @param {string} [text]  teks opsional (default cuplikan); utk "Dengar" adegan
- * @param {string} [emotion]  label emosi adegan (opsional) untuk mengarahkan gaya bicara
+ * @param {string} [text]  teks opsional
+ * @param {string} [emotion]  label emosi adegan (opsional)
  */
 async function previewVoice(name, btn, text, emotion, tier) {
+    // Jika tombol yang sama diklik saat sedang memutar -> hentikan
+    if (btn && _previewActiveBtn === btn && _previewAudio && !_previewAudio.paused) {
+        stopVoicePreview();
+        return;
+    }
+    stopVoicePreview();
+
+    // 1. Mode Pratinjau Suara Offline (tombol ▶ pada pemilih suara)
+    if (!text) {
+        const resolvedName = OFFLINE_VOICE_ALIASES[name] || name || 'Kore';
+        const voiceObj = (GEMINI_VOICES_CACHE || []).find(v => v.name === resolvedName);
+        const sampleUrl = (voiceObj && voiceObj.sampleUrl) || (`/audio/voices/${encodeURIComponent(resolvedName)}.wav`);
+        try {
+            const audio = new Audio(sampleUrl);
+            _previewAudio = audio;
+            _previewActiveBtn = btn || null;
+            if (btn) {
+                const ico = btn.querySelector('i');
+                if (ico) ico.className = 'fa-solid fa-stop text-amber-400';
+            }
+            audio.onended = () => {
+                if (_previewAudio === audio) stopVoicePreview();
+            };
+            audio.onerror = () => {
+                if (_previewAudio === audio) stopVoicePreview();
+                showToast('Gagal memuat sampel suara ' + resolvedName + '.', 'error');
+            };
+            await audio.play();
+            showToast('Memutar sampel suara ' + resolvedName + '…', 'info');
+        } catch (e) {
+            stopVoicePreview();
+            showToast('Gagal memutar contoh suara.', 'error');
+        }
+        return;
+    }
+
+    // 2. Mode teks kustom (hanya bila dipanggil dengan teks spesifik)
     if (btn) btn.disabled = true;
     try {
         const t = tier || (typeof getSelectedTier === 'function' ? getSelectedTier() : '');
@@ -90,11 +156,14 @@ async function previewVoice(name, btn, text, emotion, tier) {
         }
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
-        if (_previewAudio) { try { _previewAudio.pause(); } catch (e) { /* ignore */ } }
-        _previewAudio = new Audio(url);
-        _previewAudio.onended = () => URL.revokeObjectURL(url);
-        await _previewAudio.play();
-        showToast('Memutar contoh suara ' + name + '…', 'success');
+        const audio = new Audio(url);
+        _previewAudio = audio;
+        audio.onended = () => {
+            URL.revokeObjectURL(url);
+            if (_previewAudio === audio) stopVoicePreview();
+        };
+        await audio.play();
+        showToast('Memutar suara ' + name + '…', 'success');
     } catch (e) {
         showToast('Gagal memutar contoh suara. Silakan coba lagi.', 'error');
     } finally {

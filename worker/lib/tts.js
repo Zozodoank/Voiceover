@@ -68,41 +68,56 @@ function chainBudget(env) {
 // Daftar voice resmi Gemini TTS (subset kurasi + trait/gender perkiraan untuk UI & nada naskah).
 // Override lewat env GEMINI_TTS_VOICES = "Kore,Puck,..." bila katalog Anda beda.
 const GEMINI_VOICES = [
-    { name: 'Kore',        trait: 'Jernih & tenang',   gender: 'female' },
-    { name: 'Zephyr',      trait: 'Ceria & cerah',     gender: 'female' },
-    { name: 'Puck',        trait: 'Riang & upbeat',    gender: 'male' },
-    { name: 'Charon',      trait: 'Tegas & informatif', gender: 'male' },
-    { name: 'Fenrir',      trait: 'Bersemangat',       gender: 'male' },
-    { name: 'Leda',        trait: 'Muda & segar',      gender: 'female' },
-    { name: 'Orus',        trait: 'Kokoh & tegas',     gender: 'male' },
-    { name: 'Aoede',       trait: 'Ringan & breezy',   gender: 'female' },
-    { name: 'Enceladus',   trait: 'Halus & breathy',   gender: 'male' },
-    { name: 'Algieba',     trait: 'Mulus & hangat',    gender: 'male' },
-    { name: 'Despoina',    trait: 'Memikat & catchy',  gender: 'female' },
-    { name: 'Erato',       trait: 'Antusias & hidup',  gender: 'female' },
-    { name: 'Metis',       trait: 'Bijak & thoughtul', gender: 'female' },
-    { name: 'Hippolytos',  trait: 'Energik & kuat',    gender: 'male' },
+    { name: 'Kore',        trait: 'Jernih & tenang',    gender: 'female', sampleUrl: '/audio/voices/Kore.wav' },
+    { name: 'Zephyr',      trait: 'Ceria & cerah',      gender: 'female', sampleUrl: '/audio/voices/Zephyr.wav' },
+    { name: 'Puck',        trait: 'Riang & upbeat',     gender: 'male',   sampleUrl: '/audio/voices/Puck.wav' },
+    { name: 'Charon',      trait: 'Tegas & informatif', gender: 'male',   sampleUrl: '/audio/voices/Charon.wav' },
+    { name: 'Fenrir',      trait: 'Bersemangat',        gender: 'male',   sampleUrl: '/audio/voices/Fenrir.wav' },
+    { name: 'Leda',        trait: 'Muda & segar',       gender: 'female', sampleUrl: '/audio/voices/Leda.wav' },
+    { name: 'Orus',        trait: 'Kokoh & tegas',      gender: 'male',   sampleUrl: '/audio/voices/Orus.wav' },
+    { name: 'Aoede',       trait: 'Ringan & breezy',    gender: 'female', sampleUrl: '/audio/voices/Aoede.wav' },
+    { name: 'Enceladus',   trait: 'Halus & breathy',    gender: 'male',   sampleUrl: '/audio/voices/Enceladus.wav' },
+    { name: 'Algieba',     trait: 'Mulus & hangat',     gender: 'male',   sampleUrl: '/audio/voices/Algieba.wav' },
+    { name: 'Despina',     trait: 'Memikat & catchy',   gender: 'female', sampleUrl: '/audio/voices/Despina.wav' },
+    { name: 'Erinome',     trait: 'Antusias & hidup',   gender: 'female', sampleUrl: '/audio/voices/Erinome.wav' },
+    { name: 'Sulafat',     trait: 'Bijak & hangat',     gender: 'female', sampleUrl: '/audio/voices/Sulafat.wav' },
+    { name: 'Iapetus',     trait: 'Energik & kuat',     gender: 'male',   sampleUrl: '/audio/voices/Iapetus.wav' },
 ];
+
+// Pemetaan nama voice lama (riwayat tersimpan) ke nama voice resmi Gemini TTS.
+const LEGACY_VOICE_ALIAS = {
+    Despoina: 'Despina',
+    Erato: 'Erinome',
+    Metis: 'Sulafat',
+    Hippolytos: 'Iapetus',
+};
+
+export function normalizeVoiceName(name) {
+    const raw = String(name || '').trim();
+    return LEGACY_VOICE_ALIAS[raw] || raw;
+}
 
 /** Daftar voice aktif: dari env GEMINI_TTS_VOICES (nama dipisah koma) atau default resmi. */
 export function listVoices(env) {
     const raw = String((env && env.GEMINI_TTS_VOICES) || '').trim();
     if (!raw) return GEMINI_VOICES;
-    return raw.split(',').map(s => s.trim()).filter(Boolean)
+    return raw.split(',').map(s => normalizeVoiceName(s)).filter(Boolean)
         .map(name => {
             const known = GEMINI_VOICES.find(v => v.name === name);
-            return known || { name, trait: '', gender: 'unknown' };
+            return known || { name, trait: '', gender: 'unknown', sampleUrl: `/audio/voices/${encodeURIComponent(name)}.wav` };
         });
 }
 
-/** True jika nama voice ada dalam daftar aktif. */
+/** True jika nama voice ada dalam daftar aktif (termasuk alias lama). */
 export function isKnownVoice(env, name) {
-    return listVoices(env).some(v => v.name === name);
+    const resolved = normalizeVoiceName(name);
+    return listVoices(env).some(v => v.name === resolved);
 }
 
-/** Ambil objek voice {name,trait,gender} dari daftar aktif, atau null. env opsional (pakai default). */
+/** Ambil objek voice {name,trait,gender,sampleUrl} dari daftar aktif, atau null. env opsional (pakai default). */
 export function getVoice(name, env) {
-    return listVoices(env).find(v => v.name === name) || null;
+    const resolved = normalizeVoiceName(name);
+    return listVoices(env).find(v => v.name === resolved) || null;
 }
 
 // Kosakata emosi TERKURASI untuk video affiliate. Dipakai juga oleh ai.js (sinkron).
@@ -222,11 +237,12 @@ function base64ToBytes(b64) {
  * 429/503 diulang dengan backoff (menghormati Retry-After).
  */
 async function callGeminiTts(env, model, { text, voiceName, emotion }, timeoutMs) {
+    const resolvedVoice = normalizeVoiceName(voiceName);
     const body = {
         contents: [{ parts: [{ text: stylePrompt(text, emotion, env) }] }],
         generationConfig: {
             responseModalities: ['AUDIO'],
-            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: resolvedVoice } } },
         },
     };
 

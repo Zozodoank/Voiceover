@@ -245,10 +245,19 @@ function renderScenesTimeline(scenes) {
     `).join('');
 }
 
-function playSceneAudio(scene, idx) {
-    // Dengarkan naskah adegan dengan voice TTS terpilih + nuansa emosi (model mengikuti tier kualitas).
-    // Audio hasil prerender dipakai lebih dulu: tempo sudah disesuaikan & tidak memakan kuota TTS.
-    if (typeof playCachedSceneAudio === 'function' && playCachedSceneAudio(Number(idx))) return;
+async function playSceneAudio(scene, idx) {
+    // Dengarkan naskah adegan dari potongan audio hasil prerender (1x sintesis untuk seluruh video)
+    // sehingga klik "Dengar" per adegan tidak memakan kuota TTS tambahan.
+    const i = Number(idx);
+    if (typeof playCachedSceneAudio === 'function' && playCachedSceneAudio(i)) return;
+    if (typeof ensureSceneAudios === 'function') {
+        try {
+            showToast('Menyiapkan suara adegan…', 'info');
+            await ensureSceneAudios();
+            paintSceneDurations();
+            if (typeof playCachedSceneAudio === 'function' && playCachedSceneAudio(i)) return;
+        } catch (e) { /* lanjut fallback */ }
+    }
     const v = getSelectedVoice();
     const tier = (typeof getSelectedTier === 'function') ? getSelectedTier() : '';
     previewVoice(v.name, null, scene.text, scene.emotion, tier);
