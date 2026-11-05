@@ -146,41 +146,92 @@
             </div>
 
             <!-- Nominal deposit CUSTOM; kode unik 2 digit muncul di bawahnya setelah order dibuat -->
-            <div class="p-3.5 rounded-2xl bg-slate-950 border border-amber-500/40 space-y-2">
-                <label for="qrisDepositInput" class="block text-xs font-bold text-slate-300">Nominal Deposit (Rp)</label>
+            <div class="p-3.5 sm:p-4 rounded-2xl bg-slate-950 border border-amber-500/40 space-y-3">
+                <div class="flex items-center justify-between gap-2">
+                    <label for="qrisDepositInput" class="block text-xs font-bold text-slate-200">Nominal Deposit (Rp)</label>
+                    <span class="text-[10px] font-semibold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-full">Kelipatan Rp 100</span>
+                </div>
                 <div class="flex gap-2">
                     <input id="qrisDepositInput" type="number" min="1000" max="10000000" step="100" inputmode="numeric"
                         placeholder="Contoh: 50000" oninput="onQrisAmountInput()"
-                        class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none">
+                        class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm font-bold text-white focus:border-emerald-500 outline-none">
                     <button id="qrisCreateBtn" onclick="createCustomQrisOrder()"
-                        class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold whitespace-nowrap">
+                        class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-extrabold whitespace-nowrap shadow-lg shadow-emerald-600/25 transition">
                         <i class="fa-solid fa-lock"></i> <span id="qrisCreateBtnText">Bayar</span>
                     </button>
                 </div>
-                <p id="qrisAmountError" class="hidden text-[11px] text-rose-400"></p>
-                <p id="qrisAmountHint" class="hidden text-[11px] text-amber-300"></p>
-                <div class="flex items-center justify-between text-xs text-slate-400">
-                    <span>Nominal Deposit:</span>
-                    <span id="qrisBasePriceLabel" class="font-medium text-slate-200">Rp 0</span>
+                <!-- Pilihan Cepat Nominal -->
+                <div class="grid grid-cols-4 gap-1.5">
+                    <button type="button" onclick="selectQuickQrisAmount(10000)" class="py-1.5 px-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-600 text-[11px] font-bold text-slate-300 transition">10 Rb</button>
+                    <button type="button" onclick="selectQuickQrisAmount(20000)" class="py-1.5 px-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-600 text-[11px] font-bold text-slate-300 transition">20 Rb</button>
+                    <button type="button" onclick="selectQuickQrisAmount(50000)" class="py-1.5 px-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-600 text-[11px] font-bold text-slate-300 transition">50 Rb</button>
+                    <button type="button" onclick="selectQuickQrisAmount(100000)" class="py-1.5 px-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-600 text-[11px] font-bold text-slate-300 transition">100 Rb</button>
                 </div>
-                <div class="flex items-center justify-between text-xs text-slate-400">
-                    <span>Kode Unik Verifikasi:</span>
-                    <span id="qrisUniqueCodeLabel" class="font-mono font-bold text-amber-400">otomatis</span>
-                </div>
-                <div class="flex items-center justify-between">
-                    <span class="text-xs font-bold uppercase text-white">Total Transfer:</span>
-                    <div class="flex items-center gap-2">
-                        <span id="qrisTotalAmountDisplay" class="text-lg font-black text-emerald-400 font-mono">&mdash;</span>
-                        <button onclick="copyExactNominal()" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-200 border border-slate-700">
-                            <i class="fa-regular fa-copy"></i>
-                        </button>
-                        <button id="qrisDownloadBtn" onclick="downloadQrisSvg()" class="hidden px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-200 border border-slate-700" title="Unduh QRIS">
-                            <i class="fa-solid fa-download"></i>
-                        </button>
+                <p id="qrisAmountError" class="hidden text-[11px] text-rose-400 font-semibold"></p>
+                <p id="qrisAmountHint" class="hidden text-[11px] text-amber-300 font-medium"></p>
+
+                <!-- Rincian Nominal & Kotak Tegas Total Transfer + 2 Nomor Unik -->
+                <div class="rounded-2xl bg-slate-900/90 border border-slate-800 p-3 space-y-2.5">
+                    <div class="flex items-center justify-between text-xs text-slate-400">
+                        <span>Nominal Deposit:</span>
+                        <span id="qrisBasePriceLabel" class="font-semibold text-slate-200">Rp 0</span>
+                    </div>
+                    <div class="flex items-center justify-between text-xs text-slate-400">
+                        <span class="flex items-center gap-1.5">
+                            <span>2 Nomor Unik Verifikasi:</span>
+                            <span class="px-1.5 py-0.2 text-[9px] font-extrabold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded">Wajib</span>
+                        </span>
+                        <span id="qrisUniqueCodeLabel" class="font-mono text-sm font-extrabold text-amber-400">otomatis</span>
+                    </div>
+
+                    <!-- KOTAK UTAMA TOTAL TRANSFER (FONT BESAR & SOROT 2 DIGIT UNIK) -->
+                    <div class="pt-2 border-t border-slate-800">
+                        <div class="flex items-center justify-between gap-2 mb-1">
+                            <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-300 flex items-center gap-1">
+                                <i class="fa-solid fa-circle-exclamation text-amber-400"></i>
+                                <span>Total yang WAJIB Ditransfer</span>
+                            </span>
+                            <div class="flex items-center gap-1.5">
+                                <button onclick="copyExactNominal()" class="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-[11px] font-bold text-emerald-300 border border-emerald-500/40 flex items-center gap-1 transition" title="Salin Nominal Tepat">
+                                    <i class="fa-regular fa-copy"></i> <span>Salin</span>
+                                </button>
+                                <button id="qrisDownloadBtn" onclick="downloadQrisSvg()" class="hidden px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200 border border-slate-700" title="Unduh QRIS">
+                                    <i class="fa-solid fa-download"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="p-3 rounded-xl bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-2 border-amber-500/50 flex items-center justify-between gap-2 shadow-inner">
+                            <span id="qrisTotalAmountDisplay" class="text-2xl sm:text-3xl font-black text-emerald-400 font-mono tracking-tight select-all">&mdash;</span>
+                            <span id="qrisUnique2DigitPill" class="hidden px-2 py-1 rounded-lg bg-amber-500/20 border border-amber-400/50 text-[10px] font-extrabold text-amber-300 text-right leading-tight shrink-0">
+                                2 Angka Unik<br><span id="qrisUnique2DigitBig" class="text-sm font-black text-amber-300 font-mono">--</span>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Panduan Visual Salah vs Benar (Muncul saat Order Aktif) -->
+                    <div id="qrisUniqueCompareBox" class="hidden space-y-2 pt-1">
+                        <div class="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-[11px] text-rose-200 leading-snug">
+                            <div class="font-extrabold text-rose-300 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+                                <i class="fa-solid fa-triangle-exclamation text-rose-400"></i>
+                                <span>JANGAN DIBULATKAN! WAJIB PAKAI 2 NOMOR UNIK</span>
+                            </div>
+                            <span>Masukkan nominal <strong>persis sampai 2 angka terakhir</strong> agar sistem mendeteksi pembayaran Anda secara otomatis:</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-center font-mono text-xs">
+                            <div class="p-2 rounded-xl bg-rose-950/60 border border-rose-500/40">
+                                <div class="text-[10px] font-sans font-bold text-rose-400 uppercase"><i class="fa-solid fa-circle-xmark mr-1"></i>Salah (Dibulatkan)</div>
+                                <div id="qrisWrongExampleLabel" class="text-sm font-bold text-rose-300 line-through mt-0.5">Rp 50.000</div>
+                            </div>
+                            <div class="p-2 rounded-xl bg-emerald-950/60 border-2 border-emerald-500/60">
+                                <div class="text-[10px] font-sans font-extrabold text-emerald-300 uppercase"><i class="fa-solid fa-circle-check mr-1"></i>Benar (Otomatis)</div>
+                                <div id="qrisRightExampleLabel" class="text-sm font-black text-emerald-300 mt-0.5">Rp 50.037</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <p id="qrisWarningText" class="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2 leading-relaxed">
-                    <i class="fa-solid fa-lock mr-1"></i>Nominal pembayaran akan otomatis tercantum di QRIS setelah Anda menekan <strong>Bayar</strong>.
+
+                <p id="qrisWarningText" class="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2.5 leading-relaxed">
+                    <i class="fa-solid fa-lock mr-1"></i>Nominal pembayaran beserta <strong>2 nomor unik</strong> akan otomatis ditampilkan setelah Anda menekan <strong>Bayar</strong>.
                 </p>
             </div>
             <div class="flex items-center justify-between gap-2">

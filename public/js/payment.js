@@ -22,9 +22,45 @@ function setQrisStep(step) {
     const isQr = qrisPanelStep === 'qr';
     toggleQrisHidden('qrisQrPanel', !isQr);
     toggleQrisHidden('qrisQrPlaceholder', isQr);
+    toggleQrisHidden('qrisUnique2DigitPill', !isQr);
+    toggleQrisHidden('qrisUniqueCompareBox', !isQr);
     markQrisStale(false);
     const label = document.getElementById('qrisCreateBtnText');
     if (label) label.textContent = isQr ? 'Buat Ulang' : 'Bayar';
+}
+
+/** Pilih cepat nominal deposit dari tombol pintasan (10 Rb / 20 Rb / 50 Rb / 100 Rb). */
+function selectQuickQrisAmount(val) {
+    const input = document.getElementById('qrisDepositInput');
+    if (!input) return;
+    input.value = String(val);
+    onQrisAmountInput();
+}
+
+/** Render nominal total dengan sorotan mencolok pada 2 digit kode unik terakhir (tanpa mengubah textContent). */
+function paintTotalAmountWithUniqueHighlight(totalAmount, unique2Digit, baseAmount) {
+    const totalEl = document.getElementById('qrisTotalAmountDisplay');
+    if (!totalEl) return;
+    if (!totalAmount || !(totalAmount > 0)) {
+        totalEl.innerText = '\u2014';
+        return;
+    }
+    const formatted = `Rp ${Number(totalAmount).toLocaleString('id-ID')}`;
+    const prefix = formatted.slice(0, -2);
+    const last2 = formatted.slice(-2);
+    // Tanpa spasi di antara span agar totalEl.textContent tetap persis "Rp 50.037"
+    totalEl.innerHTML = `<span class="text-white">${prefix}</span><span class="inline-block bg-amber-400 text-slate-950 px-1.5 py-0.5 rounded-lg font-black ring-2 ring-amber-300 shadow-md shadow-amber-500/30">${last2}</span>`;
+
+    const big2 = document.getElementById('qrisUnique2DigitBig');
+    if (big2) big2.textContent = `+${String(unique2Digit || last2).padStart(2, '0')}`;
+
+    const wrongEl = document.getElementById('qrisWrongExampleLabel');
+    if (wrongEl && baseAmount > 0) wrongEl.textContent = `Rp ${Number(baseAmount).toLocaleString('id-ID')}`;
+
+    const rightEl = document.getElementById('qrisRightExampleLabel');
+    if (rightEl) {
+        rightEl.innerHTML = `<span>${prefix}</span><span class="bg-amber-400 text-slate-950 px-1 rounded font-black">${last2}</span>`;
+    }
 }
 
 /** Beri aksen pada tombol utama saat nominal diubah setelah QRIS tampil. */
@@ -132,11 +168,11 @@ function setQrisDynamic(isDynamic) {
     const warning = document.getElementById('qrisWarningText');
     if (!warning) return;
     if (isDynamic) {
-        warning.innerHTML = '<i class="fa-solid fa-circle-check mr-1"></i>Nominal <strong>sudah terkunci</strong> di QRIS - cukup scan dan bayar.';
+        warning.innerHTML = '<i class="fa-solid fa-circle-check mr-1"></i>Nominal <strong>sudah terkunci</strong> di QRIS. Pastikan nominal di layar HP Anda <strong>tepat menyertakan 2 digit terakhir</strong>!';
     } else if (qrisPanelStep === 'qr') {
-        warning.innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1"></i><strong>Penting:</strong> Transfer <strong>tepat sesuai nominal hingga digit terakhir</strong> agar saldo terisi otomatis!';
+        warning.innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1"></i><strong>WAJIB TEPAT:</strong> Ketik nominal transfer <strong>persis hingga 2 digit terakhir (nomor unik)</strong> agar saldo terisi otomatis!';
     } else {
-        warning.innerHTML = '<i class="fa-solid fa-lock mr-1"></i>Nominal deposit akan dikunci otomatis di QRIS setelah kamu menekan <strong>Bayar</strong>.';
+        warning.innerHTML = '<i class="fa-solid fa-lock mr-1"></i>Nominal deposit beserta <strong>2 nomor unik</strong> akan dikunci otomatis di QRIS setelah menekan <strong>Bayar</strong>.';
     }
 }
 
@@ -193,7 +229,7 @@ function renderQrisReveal(data) {
 
     document.getElementById('qrisBasePriceLabel').innerText = `Rp ${data.baseAmount.toLocaleString('id-ID')}`;
     document.getElementById('qrisUniqueCodeLabel').innerText = `+ Rp ${data.unique2Digit}`;
-    document.getElementById('qrisTotalAmountDisplay').innerText = `Rp ${data.totalAmount.toLocaleString('id-ID')}`;
+    paintTotalAmountWithUniqueHighlight(data.totalAmount, data.unique2Digit, data.baseAmount);
 
     setQrisStep('qr');
     setQrisDynamic(!!data.qrUrl);
