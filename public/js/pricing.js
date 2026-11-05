@@ -37,6 +37,7 @@ async function loadTierPricing() {
             if (label) label.textContent = t.label;
         }
     });
+    if (typeof refreshActiveModelStatusLabel === 'function') refreshActiveModelStatusLabel();
 }
 
 /** Harga satu tier dari cache lokal; fallback ke atribut data-price radio. */

@@ -48,7 +48,7 @@ router.post('/tts/preview', requireAuth, async (c) => {
     const emotion = String(body.emotion || '').trim().slice(0, 40);
     const tier = isKnownTier(body.tier) ? String(body.tier) : 'tier-normal';
 
-    const cacheKey = `tts:v4:${tier}:${voiceName}:${await hashText(text)}`;
+    const cacheKey = `tts:v4:${tier}:${voiceName}:${emotion || '-'}:${await hashText(text)}`;
     try {
         const hit = await c.env.ORDERS.getWithMetadata(cacheKey, 'arrayBuffer');
         if (hit && hit.value && hit.value.byteLength) {

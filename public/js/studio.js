@@ -10,12 +10,24 @@ function qualityLabelForSelectedModel() {
 }
 function refreshActiveModelStatusLabel() {
     const el = document.getElementById('activeModelStatusLabel');
-    if (!el) return;
     const q = qualityLabelForSelectedModel();
-    if (q) el.innerText = `Kualitas: ${q} • Emosi Per Adegan`;
+    if (el && q) el.innerText = `Kualitas: ${q} • Emosi Per Adegan`;
+    const r = document.querySelector('input[name="ttsModel"]:checked');
+    const btnLabel = document.getElementById('generateBtnLabel');
+    if (r && btnLabel) {
+        const p = (typeof priceForTier === 'function')
+            ? priceForTier(r.value)
+            : parseInt(r.getAttribute('data-price'), 10);
+        if (Number.isFinite(p) && p > 0) {
+            btnLabel.innerText = `Buat Voice Over & Pola Emosi (Rp ${p.toLocaleString('id-ID')})`;
+        }
+    }
 }
 (function wireModelQualityLabel() {
-    document.querySelectorAll('input[name="ttsModel"]').forEach((inp) => inp.addEventListener('change', refreshActiveModelStatusLabel));
+    document.querySelectorAll('input[name="ttsModel"]').forEach((inp) => inp.addEventListener('change', () => {
+        refreshActiveModelStatusLabel();
+        if (typeof invalidateSceneAudios === 'function') invalidateSceneAudios();
+    }));
     refreshActiveModelStatusLabel();
 })();
 
@@ -154,7 +166,9 @@ async function initiateCommercialGeneration() {
     const newRecord = {
         productName,
         affiliateLink: affLink,
+        modelValue,
         modelLabel: resolvedModelLabel,
+        platform,
         gender,
         voiceName,
         videoDuration: duration,

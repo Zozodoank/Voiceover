@@ -29,11 +29,14 @@ if not exist ".dev.vars" if not exist ".env" (
     echo [INFO] Server tetap dijalankan - edit file lalu jalankan ulang bila perlu.
 )
 
+echo [INFO] Memastikan skema database D1 lokal siap...
+call npx wrangler d1 execute vo-studio-db --local --file=./schema.sql >nul 2>nul
+
 echo [INFO] Menyalakan Cloudflare Worker lokal di http://localhost:8787 ...
-echo [INFO] Browser default terbuka otomatis ke aplikasi studio SETELAH server siap...
+echo [INFO] Browser default terbuka otomatis ke aplikasi SETELAH server siap...
 
 rem Buka aplikasi di browser default begitu server siap (curl retry s.d. ~40 detik), lalu 'start' URL.
-start "" /b cmd /c "curl -s -o nul --retry 40 --retry-delay 1 --retry-connrefused http://localhost:8787/ && start http://localhost:8787/app.html"
+start "" /b cmd /c "curl -s -o nul --retry 40 --retry-delay 1 --retry-connrefused http://localhost:8787/ && start http://localhost:8787/"
 
 npx wrangler dev
 pause

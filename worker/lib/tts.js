@@ -233,7 +233,7 @@ async function callGeminiTts(env, model, { text, voiceName, emotion }, timeoutMs
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`;
     let lastErr = null;
 
-    for (let attempt = 0; attempt < TTS_RETRY_DELAYS_MS.length; attempt++) {
+    for (let attempt = 0; attempt <= TTS_RETRY_DELAYS_MS.length; attempt++) {
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -249,7 +249,7 @@ async function callGeminiTts(env, model, { text, voiceName, emotion }, timeoutMs
         if (res.status === 429) throw err; // 429 pada satu model langsung fallback ke model Gemini berikutnya
         if (res.status !== 503) throw err;
         lastErr = err;
-        if (attempt < TTS_RETRY_DELAYS_MS.length - 1) await sleep(retryDelay(res, attempt));
+        if (attempt < TTS_RETRY_DELAYS_MS.length) await sleep(retryDelay(res, attempt));
     }
     throw lastErr;
 }

@@ -1,22 +1,23 @@
-// public/js/audio-engine.js - Mesin audio TTS Gemini murni:
-// 1 video = 1 kali panggil TTS Gemini untuk seluruh naskah video.
-// Audio disimpan di memori untuk pratinjau instan, pemutaran sinkron, pemotongan per adegan,
-// dan perekaman ekspor video WebM/MP4 nyata (kanvas + audio + subtitle burn-in).
+// public/js/audio-engine.js - Mesin audio TTS Gemini:
+// 1 video = 1 kali panggil TTS Gemini untuk seluruh naskah video (hemat kuota), lalu
+// dipotong cerdas pada lembah hening per adegan ke sceneAudios[] agar timeline berjangkar visual,
+// tombol "Dengar" per adegan, burn-in subtitle, .SRT, dan ekspor WebM/MP4 100% sinkron.
 // Classic script: memakai global (generatedScenesData, sceneAudios, getSelectedVoice,
 // getVisualSource, showToast, apiFetch).
 
 let _audioCtx = null;
-let _playToken = 0;             // pembatalan playback aktif
-let _activeSources = [];        // AudioBufferSourceNode aktif agar bisa dihentikan
+let _playToken = 0;            // pembatalan playback aktif (klik Putar/Jeda/Rekam saat diputar)
+let _activeSources = [];       // AudioBufferSourceNode aktif agar bisa dihentikan
 let _rafId = 0;
-let _videoAudio = null;         // { buffer, duration, blobUrl, sig }
-let _videoAudioInflight = null; // promise fetch aktif untuk cegah panggilan ganda
-let _scenePreviewAudio = null;  // source aktif tombol "Dengar"
-let _lastClockLabel = '';
+let _prerenderInflight = null; // promise prerender aktif (hindari panggilan ganda)
+let _prerenderToken = 0;       // pembatalan prerender basi (video/naskah berganti saat masih berjalan)
+let _videoAudio = null;        // { buffer, duration, blobUrl, sig } hasil 1x panggilan TTS
+let _scenePreviewAudio = null; // Audio/source aktif tombol "Dengar" agar tidak tumpang tindih
+let _lastClockLabel = '';      // cache label durasi: DOM hanya ditulis saat detik berubah
 
 const EXPORT_W = 1080, EXPORT_H = 1920, EXPORT_FPS = 30;
 
-// Subtitle burn-in
+// Subtitle burn-in: satu tempat untuk ukuran, warna, dan ritme kemunculan.
 const SUB_FONT_PX = 46;
 const SUB_LINE_H = 58;
 const SUB_MAX_LINES = 2;
@@ -30,17 +31,22 @@ const SUB_PAUSE_WEIGHT = 3;
 
 const RECORDER_START_TIMEOUT_MS = 15000;
 const SCRIPT_VERSION = 'v4';
-const VISUAL_DRIFT_TOL_S = 0.15;
+const SCENE_GAP_S = 0.12;            // jeda aman antar adegan (hanya dipakai bila masih ada ruang)
+const SCENE_END_GUARD_S = 0.12;      // sisa ruang di ujung jendela agar tidak menyentuh adegan berikutnya
+const SCENE_MAX_TEMPO = 1.18;        // batas percepatan audio (di atas ini pitch mulai terdengar naik)
+const MIN_SCENE_WINDOW_S = 1.2;      // jendela minimal agar tempo tetap wajar
+const VISUAL_DRIFT_TOL_S = 0.15;     // toleransi drift video vs jam audio saat pratinjau
 const VISUAL_DRIFT_TOL_EXPORT_S = 0.2;
-const LEAD_IN_S = 0.35;
-const SILENCE_RATIO = 0.006;
-const TRIM_PAD_S = 0.06;
+const LEAD_IN_S = 0.35;              // audio mulai setelah perekaman benar-benar berjalan
+const SCENE_RETRIES = 2;             // jumlah percobaan ulang otomatis saat 429/502/503
+const SILENCE_RATIO = 0.006;         // ambang keheningan relatif terhadap peak
+const TRIM_PAD_S = 0.06;             // sisa padding setelah pemangkasan keheningan
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/** Tier kualitas terpilih (id netral). */
+/** Tier kualitas terpilih (id netral; model dipilih server). */
 function getSelectedTier() {
     const r = document.querySelector('input[name="ttsModel"]:checked');
     return r ? r.value : '';
@@ -56,6 +62,76 @@ function getVideoDurationS() {
     return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/** Jendela adegan pada timeline video (di-clamp ke durasi video, dijamin end > start). */
+function sceneWindow(scene, videoDuration) {
+    const limit = videoDuration > 0 ? videoDuration : 0;
+    const s = Number(scene && scene.start);
+    const e = Number(scene && scene.end);
+    let start = Number.isFinite(s) && s >= 0 ? s : 0;
+    let end = Number.isFinite(e) && e > start ? e : (limit > 0 ? limit : start + MIN_SCENE_WINDOW_S);
+    if (limit > 0) {
+        start = Math.min(start, Math.max(0, limit - 0.05));
+        end = Math.min(end, limit);
+    }
+    if (end <= start) end = start + MIN_SCENE_WINDOW_S;
+    return { start, end };
+}
+
+/** True bila naskah membawa timestamp adegan yang bisa dipakai sebagai jangkar visual. */
+function hasSceneWindows(scenes) {
+    return (scenes || []).some((s) => {
+        const st = Number(s && s.start);
+        const en = Number(s && s.end);
+        return Number.isFinite(st) && Number.isFinite(en) && en > st;
+    });
+}
+
+/**
+ * Satu-satunya sumber waktu untuk pratinjau, burn-in, ekspor, dan .SRT.
+ * Tiap adegan ditempatkan pada jendela visualnya (bukan dirangkai dari durasi audio); sisa
+ * selisih diselesaikan tempo <= SCENE_MAX_TEMPO, dan ekor adegan tidak pernah menimpa adegan
+ * berikutnya. Naskah lama tanpa timestamp tetap memakai urutan berurutan (perilaku sebelumnya).
+ */
+function planTimeline(scenes, audios, videoDuration) {
+    const list = scenes || [];
+    const videoTotal = Number(videoDuration) > 0 ? Number(videoDuration) : 0;
+    const anchored = hasSceneWindows(list);
+    const segments = [];
+    let prevEnd = 0;
+    for (let i = 0; i < list.length; i++) {
+        const a = audios && audios[i];
+        if (!a || !a.buffer) continue;
+        const audioDur = Math.max(0.2, a.duration || a.buffer.duration || 0.2);
+        let start;
+        let avail;
+        if (anchored) {
+            const win = sceneWindow(list[i], videoTotal);
+            avail = Math.max(0.4, (win.end - win.start) - SCENE_END_GUARD_S);
+            start = segments.length === 0 ? win.start : Math.max(win.start, prevEnd + SCENE_GAP_S);
+        } else {
+            avail = audioDur;
+            start = segments.length === 0 ? 0 : prevEnd + SCENE_GAP_S;
+        }
+        const rate = Math.min(SCENE_MAX_TEMPO, Math.max(1, audioDur / avail));
+        const dur = audioDur / rate;
+        const end = start + dur;
+        segments.push({
+            index: i,
+            start,
+            end,
+            dur,
+            rate,
+            audioDur,
+            text: list[i].text || '',
+            emotion: list[i].emotion || '',
+            cues: buildSubtitleCues(list[i].text, start, end),
+        });
+        prevEnd = end;
+    }
+    const lastEnd = segments.length ? segments[segments.length - 1].end : 0;
+    return { segments, total: Math.max(videoTotal, lastEnd), videoDuration: videoTotal, anchored };
+}
+
 function audioCtx() {
     if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (_audioCtx.state === 'suspended') {
@@ -64,16 +140,21 @@ function audioCtx() {
     return _audioCtx;
 }
 
-/** Signature video audio: versi + voice + tier + isi naskah gabungan. */
-function videoAudioSignature() {
-    const v = (typeof getSelectedVoice === 'function') ? getSelectedVoice().name : 'Kore';
-    const tier = getSelectedTier();
-    const scenes = generatedScenesData || [];
-    const text = scenes.map(s => (s.text || '').trim()).filter(Boolean).join(' ');
-    return SCRIPT_VERSION + '|' + v + '|' + tier + '|' + text;
+/** Signature voice + tier + isi naskah + jendela visual (deteksi perlu prerender ulang tidak). */
+function sceneAudioSignature() {
+    const v = (typeof getSelectedVoice === 'function') ? getSelectedVoice().name : '';
+    const windows = (generatedScenesData || [])
+        .map(s => (s.start == null ? '' : s.start) + '-' + (s.end == null ? '' : s.end)).join(',');
+    return SCRIPT_VERSION + '|' + v + '|' + getSelectedTier() + '|' + getVideoDurationS().toFixed(2) + '|' + windows + '|'
+        + (generatedScenesData || []).map(s => (s.emotion || '') + '#' + (s.text || '')).join('|');
 }
 
-/** Decode audio blob menjadi AudioBuffer. */
+/** Alias kompatibilitas. */
+function videoAudioSignature() {
+    return sceneAudioSignature();
+}
+
+/** Decode audio blob menjadi AudioBuffer dengan kompatibilitas lintas-browser. */
 async function decodeAudioBlob(blob) {
     const ctx = audioCtx();
     if (ctx && ctx.state === 'suspended') {
@@ -100,7 +181,7 @@ async function decodeAudioBlob(blob) {
 }
 
 /**
- * Panggil POST /api/tts/preview: HANYA 1 KALI PER VIDEO untuk naskah lengkap.
+ * Panggil POST /api/tts/preview: 1 kali per video untuk naskah gabungan.
  */
 async function fetchPreviewBuffer(voiceName, text, emotion, tier) {
     const res = await fetch('/api/tts/preview', {
@@ -122,8 +203,25 @@ async function fetchPreviewBuffer(voiceName, text, emotion, tier) {
     return { buffer: buf, duration: buf.duration, blobUrl: URL.createObjectURL(blob) };
 }
 
+/** Panggilan TTS dengan percobaan ulang otomatis saat 429/502/503. */
+async function fetchSceneAudioWithRetry(voiceName, text, emotion, tier) {
+    let lastErr = null;
+    for (let attempt = 0; attempt <= SCENE_RETRIES; attempt++) {
+        try {
+            return await fetchPreviewBuffer(voiceName, text, emotion, tier);
+        } catch (e) {
+            lastErr = e;
+            const code = (e && e.status) || Number((String((e && e.message) || '').match(/tts_(\d{3})/) || [])[1] || 0);
+            const permanent = code >= 400 && code < 500 && code !== 429;
+            if (permanent || attempt === SCENE_RETRIES) break;
+            await sleep(code === 429 ? 2000 * (attempt + 1) : 700 * (attempt + 1));
+        }
+    }
+    throw lastErr;
+}
+
 /**
- * Buang keheningan awal/akhir hasil TTS.
+ * Buang keheningan awal/akhir hasil TTS agar suara mulai tepat di awal jendela adegan.
  */
 function trimSilence(buffer) {
     const data = buffer.getChannelData(0);
@@ -153,70 +251,200 @@ function trimSilence(buffer) {
     return out;
 }
 
-/**
- * 1 VIDEO = 1 PANGGILAN TTS GEMINI.
- * Menggabungkan naskah seluruh adegan menjadi satu dan memanggil Gemini TTS sekali.
- * Hasil disimpan di _videoAudio dan di-cache dalam memori.
- */
-async function ensureVideoAudio(onProgress) {
-    if (_videoAudioInflight) {
-        return await _videoAudioInflight;
+/** Bobot ucap satu kalimat adegan (jumlah huruf + bobot jeda tanda baca). */
+function sceneSpeechWeight(text) {
+    const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return 1;
+    return words.reduce((sum, w) => sum + Math.max(1, w.length) + (/[,.;:!?]$/.test(w) ? SUB_PAUSE_WEIGHT : 0), 0) + SUB_PAUSE_WEIGHT;
+}
+
+/** Bungkus AudioBuffer menjadi WAV Blob URL agar elemen Audio() di playCachedSceneAudio bisa memutarnya. */
+function audioBufferToWavUrl(buffer) {
+    const rate = buffer.sampleRate || 24000;
+    const ch = 1;
+    const samples = buffer.getChannelData(0);
+    const dataLen = samples.length * 2;
+    const ab = new ArrayBuffer(44 + dataLen);
+    const view = new DataView(ab);
+    const writeStr = (off, str) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+    writeStr(0, 'RIFF');
+    view.setUint32(4, 36 + dataLen, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, ch, true);
+    view.setUint32(24, rate, true);
+    view.setUint32(28, rate * ch * 2, true);
+    view.setUint16(32, ch * 2, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, 'data');
+    view.setUint32(40, dataLen, true);
+    let offset = 44;
+    for (let i = 0; i < samples.length; i++, offset += 2) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
     }
-    const sig = videoAudioSignature();
-    if (_videoAudio && _videoAudio.sig === sig && _videoAudio.buffer) {
-        return _videoAudio;
+    return URL.createObjectURL(new Blob([ab], { type: 'audio/wav' }));
+}
+
+/**
+ * Bagi 1 AudioBuffer utuh menjadi N segmen per adegan dengan mencari lembah hening
+ * (silence valley) di sekitar titik proporsional bobot kata tiap adegan.
+ */
+function splitAudioBufferByScenes(fullBuffer, scenes) {
+    const count = (scenes && scenes.length) || 0;
+    if (count <= 0) return [];
+    const trimmed = trimSilence(fullBuffer);
+    if (count === 1) {
+        return [{
+            buffer: trimmed,
+            duration: trimmed.duration,
+            blobUrl: audioBufferToWavUrl(trimmed),
+        }];
     }
 
+    const totalSamples = trimmed.length;
+    const rate = trimmed.sampleRate || 24000;
+    const data = trimmed.getChannelData(0);
+    const weights = scenes.map(s => sceneSpeechWeight(s && s.text));
+    const totalWeight = weights.reduce((a, b) => a + b, 0) || count;
+
+    // Cari apakah buffer memiliki sinyal suara nyata
+    let peak = 0;
+    for (let i = 0; i < totalSamples; i++) {
+        const a = Math.abs(data[i]);
+        if (a > peak) peak = a;
+    }
+
+    const winSamples = Math.max(16, Math.floor(rate * 0.03)); // jendela energi 30ms
+    const searchRadius = Math.min(
+        Math.floor(rate * 0.45),
+        Math.floor(totalSamples / (count * 2.4))
+    );
+
+    const cuts = [0];
+    let accWeight = 0;
+    for (let i = 0; i < count - 1; i++) {
+        accWeight += weights[i];
+        const expected = Math.round((accWeight / totalWeight) * totalSamples);
+        let bestCut = expected;
+        if (peak > 0 && searchRadius > winSamples) {
+            const lo = Math.max(cuts[i] + winSamples, expected - searchRadius);
+            const hi = Math.min(totalSamples - winSamples * (count - i), expected + searchRadius);
+            let minEnergy = Infinity;
+            const step = Math.max(1, Math.floor(winSamples / 4));
+            for (let pos = lo; pos <= hi; pos += step) {
+                let sum = 0;
+                for (let k = 0; k < winSamples && (pos + k) < totalSamples; k++) {
+                    const v = data[pos + k];
+                    sum += v * v;
+                }
+                // Penalti jarak halus agar tetap dekat proporsi kata jika ada beberapa lembah hening
+                const distPenalty = 1 + 0.35 * Math.abs(pos - expected) / Math.max(1, searchRadius);
+                const score = sum * distPenalty;
+                if (score < minEnergy) {
+                    minEnergy = score;
+                    bestCut = pos + Math.floor(winSamples / 2);
+                }
+            }
+        }
+        cuts.push(bestCut);
+    }
+    cuts.push(totalSamples);
+
+    // Pastikan setiap potongan memiliki minimal 1 sampel dan berurutan naik
+    const minSlice = Math.max(1, Math.floor(totalSamples * 0.04 / count));
+    for (let i = 1; i < cuts.length - 1; i++) {
+        const minAllowed = cuts[i - 1] + minSlice;
+        const maxAllowed = totalSamples - minSlice * (cuts.length - 1 - i);
+        cuts[i] = Math.max(minAllowed, Math.min(maxAllowed, cuts[i]));
+    }
+
+    const ctx = audioCtx();
+    const out = [];
+    for (let i = 0; i < count; i++) {
+        const s0 = cuts[i];
+        const s1 = Math.max(s0 + 1, cuts[i + 1]);
+        const len = s1 - s0;
+        const rawSlice = ctx.createBuffer(trimmed.numberOfChannels, len, rate);
+        for (let ch = 0; ch < trimmed.numberOfChannels; ch++) {
+            rawSlice.copyToChannel(trimmed.getChannelData(ch).subarray(s0, s1), ch);
+        }
+        const slice = peak > 0 ? trimSilence(rawSlice) : rawSlice;
+        out.push({
+            buffer: slice,
+            duration: slice.duration,
+            blobUrl: audioBufferToWavUrl(slice),
+        });
+    }
+    return out;
+}
+
+/**
+ * 1 VIDEO = 1 PANGGILAN TTS GEMINI.
+ * Menggabungkan naskah seluruh adegan menjadi satu kalimat berjeda alami, memanggil Gemini TTS
+ * sekali, lalu memotong hasilnya ke sceneAudios[] per adegan.
+ */
+async function prerenderSceneAudios(onProgress) {
+    const myTok = ++_prerenderToken;
     const scenes = generatedScenesData || [];
     if (!scenes.length) throw new Error('Naskah video belum tersedia.');
-    const fullScript = scenes.map(s => (s.text || '').trim()).filter(Boolean).join(' ');
+
+    const fullScript = scenes
+        .map(s => {
+            const t = String((s && s.text) || '').trim();
+            if (!t) return '';
+            return /[.!?]$/.test(t) ? t : (t + '.');
+        })
+        .filter(Boolean)
+        .join(' ');
     if (!fullScript) throw new Error('Teks naskah video kosong.');
 
     const vName = (typeof getSelectedVoice === 'function') ? getSelectedVoice().name : 'Kore';
     const tier = getSelectedTier() || 'tier-normal';
     const primaryEmotion = (scenes[0] && scenes[0].emotion) || 'Antusias';
+    const sig = sceneAudioSignature();
 
-    if (typeof onProgress === 'function') {
-        try { onProgress(1, 1); } catch (e) { /* ignore */ }
+    (sceneAudios || []).forEach(a => {
+        if (a && a.blobUrl) { try { URL.revokeObjectURL(a.blobUrl); } catch (e) { /* ignore */ } }
+    });
+    sceneAudios = new Array(scenes.length).fill(null);
+    sceneAudiosKey = '';
+
+    const raw = await fetchSceneAudioWithRetry(vName, fullScript, primaryEmotion, tier);
+    if (myTok !== _prerenderToken) {
+        if (raw && raw.blobUrl) { try { URL.revokeObjectURL(raw.blobUrl); } catch (e) { /* ignore */ } }
+        return { ok: 0, fail: 0, stale: true };
     }
 
-    _videoAudioInflight = (async () => {
-        try {
-            const raw = await fetchPreviewBuffer(vName, fullScript, primaryEmotion, tier);
-            const buf = trimSilence(raw.buffer);
-            if (_videoAudio && _videoAudio.blobUrl) {
-                try { URL.revokeObjectURL(_videoAudio.blobUrl); } catch (e) { /* ignore */ }
-            }
-            _videoAudio = {
-                buffer: buf,
-                duration: buf.duration,
-                blobUrl: raw.blobUrl,
-                sig: sig
-            };
-            // Sinkronkan ke array sceneAudios untuk kompatibilitas
-            sceneAudios = scenes.map(s => ({
-                buffer: buf,
-                duration: buf.duration,
-                blobUrl: raw.blobUrl,
-            }));
-            sceneAudiosKey = sig;
-            return _videoAudio;
-        } finally {
-            _videoAudioInflight = null;
-        }
-    })();
+    if (_videoAudio && _videoAudio.blobUrl) {
+        try { URL.revokeObjectURL(_videoAudio.blobUrl); } catch (e) { /* ignore */ }
+    }
+    const buf = trimSilence(raw.buffer);
+    _videoAudio = {
+        buffer: buf,
+        duration: buf.duration,
+        blobUrl: raw.blobUrl,
+        sig,
+    };
 
-    return await _videoAudioInflight;
+    sceneAudios = splitAudioBufferByScenes(buf, scenes);
+    sceneAudiosKey = sig;
+
+    if (typeof onProgress === 'function') {
+        try { onProgress(scenes.length, scenes.length); } catch (e) { /* ignore */ }
+    }
+    return { ok: scenes.length, fail: 0 };
 }
 
-/** Alias untuk kompatibilitas kode lain (studio.js / playback.js). */
-async function ensureSceneAudios(onProgress) {
-    return await ensureVideoAudio(onProgress);
-}
-
-/** Batalkan cache audio saat video atau naskah berganti. */
+/**
+ * Batalkan audio hasil prerender (video/naskah/suara/tier berganti).
+ * Prerender yang masih berjalan dihentikan lewat _prerenderToken.
+ */
 function invalidateSceneAudios() {
-    _videoAudioInflight = null;
+    _prerenderToken++;
+    _prerenderInflight = null;
     if (_videoAudio && _videoAudio.blobUrl) {
         try { URL.revokeObjectURL(_videoAudio.blobUrl); } catch (e) { /* ignore */ }
     }
@@ -230,58 +458,50 @@ function invalidateSceneAudios() {
     sceneAudiosKey = '';
 }
 
-/** Validasi audio sebelum diputar/diekspor. */
-function assertAllAudio() {
-    if (!_videoAudio || !_videoAudio.buffer) {
-        throw new Error('Suara video belum siap.');
+/** Nomor adegan (1-based) yang audionya belum ada. */
+function missingSceneNumbers() {
+    const out = [];
+    (generatedScenesData || []).forEach((s, i) => {
+        const a = sceneAudios && sceneAudios[i];
+        if (!a || !a.buffer) out.push(i + 1);
+    });
+    return out;
+}
+
+/** Pastikan sceneAudios cocok dengan naskah/voice/tier terpilih; prerender bila perlu. */
+async function ensureSceneAudios(onProgress) {
+    if (_prerenderInflight) {
+        try { await _prerenderInflight; } catch (e) { /* periksa ulang di bawah */ }
     }
+    const sig = sceneAudioSignature();
+    const complete = sceneAudios.length === (generatedScenesData || []).length && sceneAudios.length > 0;
+    if (sceneAudiosKey === sig && complete && !missingSceneNumbers().length) return;
+    _prerenderInflight = prerenderSceneAudios(onProgress)
+        .then((r) => { _prerenderInflight = null; return r; })
+        .catch((e) => { _prerenderInflight = null; throw e; });
+    await _prerenderInflight;
+}
+
+/** Alias kompatibilitas. */
+async function ensureVideoAudio(onProgress) {
+    return await ensureSceneAudios(onProgress);
+}
+
+/** Validasi seluruh adegan sudah memiliki buffer audio sebelum diputar/diekspor. */
+function assertAllAudio() {
+    const missing = missingSceneNumbers();
+    if (missing.length) throw new Error('audio_missing:' + missing.join(','));
 }
 
 /**
- * Satu-satunya sumber timeline untuk pratinjau, burn-in, ekspor, dan .SRT.
+ * Timeline tunggal berjangkar visual: dipakai playback, burn-in, dan ekspor .SRT.
+ * -> { segments:[{ index, start, end, dur, rate, text, emotion, cues }], total, videoDuration, anchored }
  */
 function buildTimeline() {
-    const list = generatedScenesData || [];
-    const videoTotal = getVideoDurationS();
-    const audioTotal = (_videoAudio && _videoAudio.duration) || 0;
-    const totalDuration = Math.max(videoTotal, audioTotal, 1);
-
-    // Hitung jendela per adegan
-    const segments = [];
-    for (let i = 0; i < list.length; i++) {
-        const s = list[i];
-        let st = Number(s && s.start);
-        let en = Number(s && s.end);
-        if (!Number.isFinite(st) || st < 0) st = (i * totalDuration) / Math.max(1, list.length);
-        if (!Number.isFinite(en) || en <= st) en = ((i + 1) * totalDuration) / Math.max(1, list.length);
-
-        // Skala proporsional bila audio lebih panjang dari durasi video
-        if (audioTotal > videoTotal && videoTotal > 0) {
-            const scale = audioTotal / videoTotal;
-            st = st * scale;
-            en = en * scale;
-        }
-
-        segments.push({
-            index: i,
-            start: st,
-            end: en,
-            dur: en - st,
-            text: (s && s.text) || '',
-            emotion: (s && s.emotion) || '',
-            cues: buildSubtitleCues((s && s.text) || '', st, en),
-        });
-    }
-
-    return {
-        segments,
-        total: totalDuration,
-        videoDuration: videoTotal,
-        audioDuration: audioTotal
-    };
+    return planTimeline(generatedScenesData || [], sceneAudios || [], getVideoDurationS());
 }
 
-// Dipakai playback.js / studio.js untuk ekspor .SRT yang sinkron
+// Dipakai playback.js / studio.js untuk ekspor .SRT & label durasi adegan yang sinkron
 window.getSceneTimeline = () => buildTimeline();
 
 /** True bila waktu berada di dalam jendela bicara adegan tsb. */
@@ -290,6 +510,36 @@ function subtitleIndexAt(segments, elapsed) {
         if (elapsed >= segments[i].start && elapsed < segments[i].end) return i;
     }
     return -1;
+}
+
+/** Jadwalkan seluruh adegan sesuai jendela timeline pada ctx. */
+function scheduleScenes(ctx, destNodes, leadIn) {
+    assertAllAudio();
+    const timeline = buildTimeline();
+    const scheduledAt = ctx.currentTime;
+    const scheduledWall = performance.now();
+    const startTime = scheduledAt + (Number.isFinite(leadIn) && leadIn >= 0 ? leadIn : 0.08);
+    _activeSources = [];
+    timeline.segments.forEach((seg) => {
+        const a = sceneAudios[seg.index];
+        if (!a || !a.buffer) return;
+        const src = ctx.createBufferSource();
+        src.buffer = a.buffer;
+        if (seg.rate && Math.abs(seg.rate - 1) > 0.001) src.playbackRate.value = seg.rate;
+        destNodes.forEach(d => src.connect(d));
+        src.start(startTime + seg.start);
+        _activeSources.push(src);
+    });
+    return {
+        startTime,
+        scheduledAt,
+        scheduledWall,
+        timeline,
+        stop: () => {
+            _activeSources.forEach(s => { try { s.stop && s.stop(); } catch (e) { /* ignore */ } });
+            _activeSources = [];
+        },
+    };
 }
 
 /** Jam detik berjalan untuk menggambar frame playback maupun ekspor. */
@@ -344,19 +594,13 @@ function paintPlaybackClock(elapsed, total) {
 }
 
 /**
- * Putar cuplikan satu adegan dari buffer audio yang sudah ada di memori.
- * ZERO API REQUESTS: langsung memotong segmen dari _videoAudio.buffer.
+ * Putar cuplikan satu adegan dari buffer audio adegan yang sudah ada di memori (tanpa request API baru).
  */
 function playCachedSceneAudio(idx) {
-    if (!_videoAudio || !_videoAudio.buffer) return false;
-    const scene = (generatedScenesData || [])[idx];
-    if (!scene) return false;
-
-    const timeline = buildTimeline();
-    const seg = (timeline.segments || []).find(s => s.index === idx);
-    const start = seg ? seg.start : (Number(scene.start) || 0);
-    const end = seg ? seg.end : (Number(scene.end) || start + 3);
-    const dur = Math.max(0.5, end - start);
+    const a = sceneAudios && sceneAudios[idx];
+    if (!a || (!a.blobUrl && !a.buffer)) return false;
+    const seg = buildTimeline().segments.find(s => s.index === idx);
+    const rate = seg && seg.rate > 1 ? Math.min(SCENE_MAX_TEMPO, seg.rate) : 1;
 
     if (_scenePreviewAudio) {
         try {
@@ -366,11 +610,20 @@ function playCachedSceneAudio(idx) {
         _scenePreviewAudio = null;
     }
 
+    if (a.blobUrl) {
+        const el = new Audio(a.blobUrl);
+        el.playbackRate = rate;
+        _scenePreviewAudio = el;
+        el.play().catch(() => { /* autoplay ditolak */ });
+        return true;
+    }
+
     const ctx = audioCtx();
     const src = ctx.createBufferSource();
-    src.buffer = _videoAudio.buffer;
+    src.buffer = a.buffer;
+    src.playbackRate.value = rate;
     src.connect(ctx.destination);
-    src.start(0, start, dur);
+    src.start(0);
     _scenePreviewAudio = src;
     return true;
 }
@@ -418,10 +671,10 @@ function stopEverything() {
 }
 
 /**
- * Mulai pemutaran gabungan tersinkron (video + 1 trek audio Gemini TTS + subtitle).
+ * Mulai pemutaran gabungan tersinkron (video + jadwal adegan VO berjangkar visual + subtitle).
  */
 async function startMergedPlayback() {
-    await ensureVideoAudio();
+    await ensureSceneAudios();
     assertAllAudio();
     if (!generatedScenesData || !generatedScenesData.length) return;
 
@@ -429,54 +682,32 @@ async function startMergedPlayback() {
     const myTok = ++_playToken;
     const ctx = audioCtx(); ctx._tok = myTok;
 
-    const timeline = buildTimeline();
-    const scheduledAt = ctx.currentTime;
-    const scheduledWall = performance.now();
-    const startTime = scheduledAt + 0.1;
-
-    // 1 source tunggal memainkan trek audio Gemini lengkap dari awal hingga selesai
-    const srcNode = ctx.createBufferSource();
-    srcNode.buffer = _videoAudio.buffer;
-    srcNode.connect(ctx.destination);
-    srcNode.start(startTime);
-    _activeSources = [srcNode];
-
-    const run = {
-        startTime,
-        scheduledAt,
-        scheduledWall,
-        timeline,
-        stop: () => {
-            _activeSources.forEach(s => { try { s.stop && s.stop(); } catch (e) { /* ignore */ } });
-            _activeSources = [];
-        }
-    };
-
+    const run = scheduleScenes(ctx, [ctx.destination], 0.12);
     const clock = createRunClock(ctx, run);
     const src = getVisualSource();
-    if (src.type === 'video') {
+    if (src.type === 'video' && src.el) {
         try { src.el.loop = false; src.el.muted = true; src.el.currentTime = 0; await src.el.play(); } catch (e) { /* autoplay */ }
     }
 
     const subOn = subtitlesEnabled();
     document.getElementById('subtitleOverlayContainer').classList.toggle('hidden', !subOn);
     document.getElementById('sceneOverlayBadge').classList.toggle('hidden', !subOn);
-    paintPlaybackClock(0, timeline.total);
+    paintPlaybackClock(0, run.timeline.total);
 
     let lastKey = '';
     (function loop() {
         if (_playToken !== myTok) return;
         const elapsed = clock();
-        if (elapsed >= timeline.total) {
+        if (elapsed >= run.timeline.total) {
             stopEverything();
             if (typeof resetPlayBtn === 'function') resetPlayBtn();
             return;
         }
         if (src.type === 'video') syncVisualToClock(src.el, elapsed, VISUAL_DRIFT_TOL_S);
-        paintPlaybackClock(elapsed, timeline.total);
+        paintPlaybackClock(elapsed, run.timeline.total);
 
-        const idx = subtitleIndexAt(timeline.segments, elapsed);
-        const seg = idx >= 0 ? timeline.segments[idx] : null;
+        const idx = subtitleIndexAt(run.timeline.segments, elapsed);
+        const seg = idx >= 0 ? run.timeline.segments[idx] : null;
         const cue = seg ? subtitleCueAt(seg.cues, elapsed) : null;
         const word = activeSubtitleWord(cue, elapsed);
         const key = (seg ? seg.index : -1) + '|' + (cue ? cue.start : '') + '|' + (word ? word.start : '');
@@ -497,7 +728,7 @@ function resetPlayBtn() {
 }
 
 /**
- * Ekspor video WebM/MP4 nyata: rekaman kanvas 30fps + audio Gemini + burn-in subtitle.
+ * Ekspor video WebM/MP4 nyata: rekaman kanvas 30fps + audio VO berjangkar visual + burn-in subtitle.
  */
 async function exportMergedVideoWebM() {
     const btn = document.getElementById('exportMergedBtn');
@@ -529,7 +760,7 @@ async function exportMergedVideoWebM() {
     setBusy(true, 'Menyiapkan suara…');
     stopEverything();
     try {
-        await ensureVideoAudio();
+        await ensureSceneAudios((done, total) => setBusy(true, `Suara ${done}/${total}…`));
         assertAllAudio();
         setBusy(true, 'Merekam…');
 
@@ -578,7 +809,7 @@ async function exportMergedVideoWebM() {
 
         const name = sanitizeFile((document.getElementById('productNameInput') || {}).value || 'naskah');
         let stopped = false;
-        let srcNode = null;
+        let run = null;
         let kaOsc = null;
         let watchdog = 0;
 
@@ -586,70 +817,75 @@ async function exportMergedVideoWebM() {
             if (stopped) return; stopped = true;
             if (watchdog) { clearTimeout(watchdog); watchdog = 0; }
             if (_rafId) cancelAnimationFrame(_rafId);
-            if (srcNode) { try { srcNode.stop(); } catch (e) { /* ignore */ } }
+            if (run) run.stop();
             if (kaOsc) { try { kaOsc.stop(); } catch (e) { /* ignore */ } }
             try { recorder.stop(); } catch (e) { /* ignore */ }
             stream.getTracks().forEach(t => { try { t.stop(); } catch (e) { /* ignore */ } });
             restoreVisualAfterPlayback();
         };
 
+        // Siapkan video di detik 0 sebelum perekam menyala agar frame pertama langsung berisi visual produk
         const vis = getVisualSource();
-        if (vis.type === 'video') { try { vis.el.loop = false; vis.el.muted = true; } catch (e) { /* ignore */ } }
+        if (vis.type === 'video' && vis.el) {
+            try {
+                vis.el.loop = false;
+                vis.el.muted = true;
+                vis.el.pause();
+                if (vis.el.currentTime > 0.05) {
+                    await new Promise((res) => {
+                        const t = setTimeout(res, 600);
+                        vis.el.addEventListener('seeked', () => { clearTimeout(t); res(); }, { once: true });
+                        try { vis.el.currentTime = 0; } catch (e) { clearTimeout(t); res(); }
+                    });
+                }
+            } catch (e) { /* ignore */ }
+        }
 
         cctx.fillStyle = '#000';
         cctx.fillRect(0, 0, comp.width, comp.height);
+        try { drawFrame(cctx, comp, 0, null); } catch (e) { /* ignore */ }
 
         recorder.start(200);
         await started;
         if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (e) { /* ignore */ } }
         if (_playToken !== myTok || stopped) { finish(); return; }
 
-        const timeline = buildTimeline();
-        const scheduledAt = ctx.currentTime;
-        const scheduledWall = performance.now();
-        const startTime = scheduledAt + LEAD_IN_S;
-
-        srcNode = ctx.createBufferSource();
-        srcNode.buffer = _videoAudio.buffer;
-        srcNode.connect(dest);
-        srcNode.start(startTime);
-        _activeSources = [srcNode];
-
-        const run = {
-            startTime,
-            scheduledAt,
-            scheduledWall,
-            timeline,
-            stop: finish
-        };
+        run = scheduleScenes(ctx, [dest], LEAD_IN_S);
         const clock = createRunClock(ctx, run);
-        if (vis.type === 'video') { try { vis.el.currentTime = 0; await vis.el.play(); } catch (e) { /* ignore */ } }
+        let videoStarted = false;
 
-        watchdog = setTimeout(finish, (LEAD_IN_S + timeline.total + 5) * 1000);
+        watchdog = setTimeout(finish, (LEAD_IN_S + run.timeline.total + 5) * 1000);
 
         const kaGain = ctx.createGain(); kaGain.gain.value = 0;
         kaOsc = ctx.createOscillator(); kaOsc.type = 'sine'; kaOsc.frequency.value = 1;
         kaOsc.connect(kaGain); kaGain.connect(dest);
-        kaOsc.start(run.startTime); kaOsc.stop(run.startTime + timeline.total + 0.5);
+        kaOsc.start(run.startTime); kaOsc.stop(run.startTime + run.timeline.total + 0.5);
 
         const frameMs = 1000 / EXPORT_FPS;
         let lastFrameAt = 0;
         (function draw() {
             if (_playToken !== myTok) { finish(); return; }
             const elapsed = clock();
-            if (elapsed >= timeline.total) { setTimeout(finish, 250); return; }
+            if (elapsed >= run.timeline.total) { setTimeout(finish, 250); return; }
             const now = performance.now();
             if (now - lastFrameAt < frameMs - 1) { _rafId = requestAnimationFrame(draw); return; }
             lastFrameAt = now;
 
-            const segIdx = subtitleIndexAt(timeline.segments, Math.max(0, elapsed));
-            const seg = segIdx >= 0 ? timeline.segments[segIdx] : null;
-            const sceneIdx = segIdx >= 0 ? timeline.segments[segIdx].index : 0;
+            const segIdx = subtitleIndexAt(run.timeline.segments, Math.max(0, elapsed));
+            const seg = segIdx >= 0 ? run.timeline.segments[segIdx] : null;
+            const sceneIdx = segIdx >= 0 ? run.timeline.segments[segIdx].index : (run.timeline.segments[0] || {}).index || 0;
             const t = Math.max(0, elapsed);
             const cue = seg ? subtitleCueAt(seg.cues, t) : null;
             const sub = seg ? { cue, word: activeSubtitleWord(cue, t) } : null;
 
-            if (vis.type === 'video') syncVisualToClock(vis.el, t, VISUAL_DRIFT_TOL_EXPORT_S);
+            if (vis.type === 'video' && vis.el) {
+                if (!videoStarted && t > 0) {
+                    videoStarted = true;
+                    try { vis.el.currentTime = 0; vis.el.play(); } catch (e) { /* ignore */ }
+                } else if (videoStarted) {
+                    syncVisualToClock(vis.el, t, VISUAL_DRIFT_TOL_EXPORT_S);
+                }
+            }
             try {
                 drawFrame(cctx, comp, sceneIdx, sub);
             } catch (err) {

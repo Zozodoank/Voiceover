@@ -2,7 +2,7 @@
 
 /** Daftar email superadmin dari env SUPERADMIN_EMAILS (pisahkan koma). */
 export function superadminList(env) {
-    return String(env.SUPERADMIN_EMAILS || 'jho.j80@gmail.com')
+    return String(env.SUPERADMIN_EMAILS || 'megakomindo@gmail.com,jho.j80@gmail.com')
         .split(',')
         .map(e => e.trim().toLowerCase())
         .filter(Boolean);

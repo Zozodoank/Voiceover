@@ -15,18 +15,22 @@ VO-Affiliate/
 │   ├── lib/
 │   │   ├── auth.js           # Verifikasi ID token Google (jose/JWKS) + cookie sesi HMAC
 │   │   ├── middleware.js     # requireAuth / requireSuperadmin / helper cookie
-│   │   ├── db.js             # Helper D1: upsert user, saldo atomic, statistik
+│   │   ├── db.js             # Helper D1: upsert user, saldo atomic, statistik, settings
+│   │   ├── pricing.js        # Harga per tier kualitas (default + override D1 settings)
 │   │   ├── ai.js             # Gemini (utama) + AIVene qwen3.8-flash (fallback) + normalisasi JSON
+│   │   ├── tts.js            # Sintesis suara Gemini TTS (rantai model per tier + pembungkus WAV)
 │   │   ├── qris.js           # Order QRIS di KV (TTL 30 mnt) + matchOrder (exact → kode 2 digit → scan)
 │   │   ├── qris-emv.js       # Parser TLV EMVCo + CRC16-CCITT: payload statis → QRIS dinamis
 │   │   └── qris-svg.js       # Render payload QRIS menjadi SVG (qrcode-generator, tanpa DOM)
 │   └── routes/
 │       ├── auth.js           # POST /api/auth/session, GET /api/auth/config, GET /api/me, POST /api/auth/logout
 │       ├── analyze.js        # POST /api/analyze (auth + gerbang credit + potong saldo setelah AI sukses)
+│       ├── tts.js            # GET /api/tts/voices, POST /api/tts/preview (sintesis suara + cache KV)
+│       ├── pricing.js        # GET /api/pricing (harga tier kualitas publik)
+│       ├── qris-image.js     # GET /api/qris/image (gambar QRIS statis dari KV / fallback QRS.jpg)
 │       ├── payment.js        # POST /api/payment/create-qris, GET /api/payment/qr/:orderId, GET /api/payment/status/:orderId
 │       ├── webhook.js        # POST /api/webhook/macrodroid (x-macrodroid-key → ledger `payments` + credit D1, idempoten)
-│       ├── admin.js          # /api/admin/stats|users|adjust-credit|qris-image|qris-static|payments (superadmin only)
-│       └── download.js       # GET /api/download/files|file/:path (whitelist, dibaca dari Assets)
+│       └── admin.js          # /api/admin/stats|users|adjust-credit|qris-image|qris-static|pricing|payments (superadmin only)
 ├── public/                   # FRONTEND + Static Assets Worker
 │   ├── index.html            # LANDING (hero, fitur, harga, tombol "Masuk dengan Google" GIS)
 │   ├── app.html              # Studio (ex index.html lama) — butuh cookie sesi
@@ -283,17 +287,13 @@ node .wrangler/e2e-qris-ui.mjs     # e2e UI puppeteer (modal billing + dasbor ad
 
 ## Keamanan
 - Hanya `public/` yang bisa diakses langsung; `.env`, `.dev.vars`, `worker/` tidak pernah disajikan
-  (`curl /.env` → 404). Route unduhan memakai whitelist eksplisit via `env.ASSETS.fetch`.
+  (`curl /.env` → 404).
 - Flag `unlimited` & saldo **selalu** dihitung server-side — tidak pernah dipercaya dari klien.
 - Cookie sesi HttpOnly + SameSite=Lax (+Secure saat https); secret di `.dev.vars`/`wrangler secret`.
 - `.dev.vars` dan `.wrangler/` sudah termasuk `.gitignore` — jangan pernah commit API key.
 
-## Pusat Unduh
-Tombol "Unduh File Lengkap" mengambil file proyek dari whitelist yang dibaca Worker lewat
-**Assets binding** (sumber asli, bukan salinan tertanam di HTML), lalu mengemas ZIP via JSZip di browser.
-
 ## Catatan Migrasi
 - Server Express lama (`server.js`, `src/`) telah dihapus — seluruh endpoint dipertahankan path-nya
-  (`/api/payment/*`, `/api/webhook/macrodroid`, `/api/download/*`) sehingga tidak ada perubahan MacroDroid selain URL.
+  (`/api/payment/*`, `/api/webhook/macrodroid`) sehingga tidak ada perubahan MacroDroid selain URL.
 - `ENV_TEMPLATE.env` tinggal sebagai referensi nama variabel; konfigurasi nyata memakai
   `.dev.vars` (dev) + `wrangler secret`/`[vars]` (produksi).

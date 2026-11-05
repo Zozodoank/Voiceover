@@ -48,7 +48,10 @@ async function renderVoicePicker() {
             l.classList.toggle('bg-brand-500/10', !!on);
         });
     };
-    box.addEventListener('change', paint);
+    box.addEventListener('change', () => {
+        paint();
+        if (typeof invalidateSceneAudios === 'function') invalidateSceneAudios();
+    });
     paint();
 }
 

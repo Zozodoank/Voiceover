@@ -67,7 +67,29 @@ function loadHistoryRecord(idx) {
     document.getElementById('hashtagsOutput').innerText = item.hashtags;
     document.getElementById('affiliateCardTitle').innerText = item.productName;
     document.getElementById('affiliateLinkDisplay').innerText = item.affiliateLink;
-    
+
+    // Pulihkan pilihan kualitas (tier), suara (voiceName), dan platform CTA
+    if (item.modelValue) {
+        const tierRadio = document.querySelector(`input[name="ttsModel"][value="${item.modelValue}"]`);
+        if (tierRadio) tierRadio.checked = true;
+    }
+    if (typeof refreshActiveModelStatusLabel === 'function') refreshActiveModelStatusLabel();
+    if (item.modelLabel) {
+        const stEl = document.getElementById('activeModelStatusLabel');
+        if (stEl) stEl.innerText = `Kualitas: ${item.modelLabel} • Emosi Per Adegan`;
+    }
+    if (item.voiceName) {
+        const vRadio = document.querySelector(`input[name="voiceName"][value="${item.voiceName}"]`);
+        if (vRadio) {
+            vRadio.checked = true;
+            vRadio.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
+    if (item.platform) {
+        const pRadio = document.querySelector(`input[name="ctaPlatform"][value="${item.platform}"]`);
+        if (pRadio) pRadio.checked = true;
+    }
+
     generatedScenesData = item.scenes;
     renderScenesTimeline(generatedScenesData);
 
