@@ -125,6 +125,7 @@ async function initiateCommercialGeneration() {
     if (lastAnalyzeErr) {
         statusBox.classList.add('hidden');
         if (lastAnalyzeErr.handled) return;
+        console.warn('Analyze error detail:', lastAnalyzeErr.status, lastAnalyzeErr.message);
         if (lastAnalyzeErr.status === 402) {
             const d = lastAnalyzeErr.data || {};
             showToast(`Saldo Anda belum mencukupi (Rp ${(d.have || 0).toLocaleString('id-ID')}). Silakan isi saldo QRIS terlebih dahulu.`, 'error');

@@ -3,8 +3,16 @@
 
 import { ALLOWED_EMOTIONS } from './tts.js';
 
-const AI_TIMEOUT_MS = 15000;      // per panggilan model (Cloudflare free tier max 30 dtk CPU)
+const AI_TIMEOUT_MS = 10000;      // per panggilan model (agar model lambat tidak menahan rantai fallback)
 const AI_TOTAL_BUDGET_MS = 55000; // anggaran total lintas provider - Cloudflare subrequest 30 dtk masing-masing
+const DEFAULT_GEMINI_MODELS = [
+    'gemini-3.1-flash-lite',
+    'gemini-3-flash-preview',
+    'gemini-3.1-flash-lite-preview',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3.5-flash',
+];
 
 /** Aturan CTA per platform tujuan - menentukan frasa keranjang yang boleh/tidak boleh. */
 const PLATFORM_CTA = {
@@ -283,19 +291,6 @@ async function callGemini(env, model, frames, prompt, timeoutMs) {
             signal: AbortSignal.timeout(timeoutMs || AI_TIMEOUT_MS),
         });
     }
-    // Jika 503 (lonjakan permintaan sementara), tunggu sebentar (800ms) lalu coba sekali lagi
-    if (!res.ok && res.status === 503 && (timeoutMs || AI_TIMEOUT_MS) > 5000) {
-        await new Promise(r => setTimeout(r, 600));
-        res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ role: 'user', parts }],
-                generationConfig,
-            }),
-            signal: AbortSignal.timeout(Math.max(3000, (timeoutMs || AI_TIMEOUT_MS) - 1000)),
-        });
-    }
 
     if (!res.ok) {
         let errMsg = '';
@@ -365,8 +360,11 @@ export async function analyzeVideo(env, { frames, frameTimes, productName, affil
     const times = normalizeFrameTimes(frameTimes, frames.length, dur);
     const prompt = buildAnalysisPrompt({ productName, affiliateLink, duration: dur, gender, frameTimes: times, platform });
     const fallbackEnabled = String(env.GEMINI_FALLBACK_ENABLED ?? 'true') !== 'false';
-    const models = String(env.GEMINI_MODELS || env.GEMINI_MODEL || 'gemini-3.5-flash-lite, gemini-flash-lite-latest, gemini-3.5-flash, gemini-3.1-flash-lite, gemini-3.8-flash, gemini-3.6-flash')
+    const configuredModels = String(env.GEMINI_MODELS || env.GEMINI_MODEL || '')
         .split(',').map(s => s.trim()).filter(Boolean);
+    const models = (!configuredModels.length || configuredModels[0] === 'gemini-3.5-flash-lite')
+        ? [...new Set([...DEFAULT_GEMINI_MODELS, ...configuredModels])]
+        : configuredModels;
     const errors = [];
     const deadline = Date.now() + AI_TOTAL_BUDGET_MS;
     const remaining = () => deadline - Date.now();
@@ -379,8 +377,10 @@ export async function analyzeVideo(env, { frames, frameTimes, productName, affil
                 const result = normalizeResult(raw, dur, { frameTimes: times });
                 if (result) return { result, provider: 'gemini:' + model };
                 errors.push(`${model}: JSON tidak valid`);
+                console.warn(`AI analyze model=${model} gagal: JSON tidak valid`);
             } catch (e) {
                 errors.push(`${model}: ${e.message}`); // 429/503/timeout -> coba model berikutnya
+                console.warn(`AI analyze model=${model} gagal: ${e.message}`);
             }
         }
     } else {
@@ -395,7 +395,10 @@ export async function analyzeVideo(env, { frames, frameTimes, productName, affil
             errors.push('aivene: JSON tidak valid');
         } catch (e) {
             errors.push(`aivene: ${e.message}`); // seluruh provider gagal -> lempar
+            console.warn(`AI analyze aivene gagal: ${e.message}`);
         }
     }
-    throw new Error(errors.join(' | ') || 'Analisa AI gagal');
+    const errDetail = errors.join(' | ') || 'Analisa AI gagal';
+    console.error('AI analyze seluruh provider gagal:', errDetail);
+    throw new Error(errDetail);
 }
