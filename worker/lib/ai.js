@@ -5,14 +5,14 @@ import { ALLOWED_EMOTIONS } from './tts.js';
 
 const AI_TIMEOUT_MS = 10000;      // per panggilan model (agar model lambat tidak menahan rantai fallback)
 const AI_TOTAL_BUDGET_MS = 55000; // anggaran total lintas provider - Cloudflare subrequest 30 dtk masing-masing
+const MAX_AI_FRAMES = 6;          // batas keras frame visual agar token gambar tidak bocor
 const DEFAULT_GEMINI_MODELS = [
     'gemini-3.1-flash-lite',
     'gemini-3-flash-preview',
     'gemini-3.1-flash-lite-preview',
-    'gemini-3.6-flash',
     'gemini-3.5-flash-lite',
-    'gemini-3.5-flash',
 ];
+const ONLY_AIVENE_MODEL = 'qwen3.8-flash';
 
 /** Aturan CTA per platform tujuan - menentukan frasa keranjang yang boleh/tidak boleh. */
 const PLATFORM_CTA = {
@@ -263,10 +263,12 @@ async function callGemini(env, model, frames, prompt, timeoutMs) {
     // thinkingConfig (menolak 400), jadi hanya sisipkan untuk model non-lite.
     const generationConfig = {
         responseMimeType: 'application/json',
-        maxOutputTokens: 2048,
+        maxOutputTokens: 800,
         temperature: 0.8,
     };
-    if (!/lite/i.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    if (/gemini-(3-flash|2\.5-flash)/i.test(model) && !/lite/i.test(model)) {
+        generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    }
 
     let res = await fetch(url, {
         method: 'POST',
@@ -309,9 +311,9 @@ async function callGemini(env, model, frames, prompt, timeoutMs) {
     return extractJson(text);
 }
 
-/** Fallback: AIVene endpoint OpenAI-compatible (model qwen3.8-flash) dengan image_url base64. */
+/** Fallback tunggal: AIVene endpoint OpenAI-compatible HANYA dengan model qwen3.8-flash setelah kuota gratis Gemini habis. */
 async function callAivene(env, frames, prompt, timeoutMs) {
-    const base = String(env.AIVENE_BASE_URL || 'https://aivene.com/v1beta').replace(/\/$/, '');
+    const base = String(env.AIVENE_BASE_URL || 'https://api.aivene.com/v1').replace(/\/$/, '');
     const url = base.endsWith('/chat/completions') ? base : `${base}/chat/completions`;
     const content = frames.map(f => ({ type: 'image_url', image_url: { url: f } }));
     content.push({ type: 'text', text: prompt });
@@ -320,20 +322,24 @@ async function callAivene(env, frames, prompt, timeoutMs) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.AIVENE_API_KEY}` },
         body: JSON.stringify({
-            model: env.AIVENE_MODEL || 'qwen3.8-flash',
+            model: ONLY_AIVENE_MODEL,
             messages: [{ role: 'user', content }],
-            temperature: 0.8,
+            temperature: 0.7,
             max_tokens: 700,
+            response_format: { type: 'json_object' },
         }),
         signal: AbortSignal.timeout(timeoutMs || AI_TIMEOUT_MS),
     });
     if (!res.ok) {
-        const err = new Error(`AIVene HTTP ${res.status}`);
+        let errMsg = '';
+        try { const j = await res.json(); errMsg = j?.error?.message || ''; } catch (ex) { /* non-json */ }
+        const err = new Error(`AIVene (${ONLY_AIVENE_MODEL}) HTTP ${res.status}${errMsg ? ': ' + errMsg.slice(0, 120) : ''}`);
         err.status = res.status;
         throw err;
     }
     const data = await res.json();
     const text = data?.choices?.[0]?.message?.content || '';
+    console.log(`AI analyze model=aivene:${ONLY_AIVENE_MODEL} tokens=${data?.usage?.total_tokens || 0} textLen=${text.length}`);
     return extractJson(text);
 }
 
@@ -351,20 +357,21 @@ function normalizeFrameTimes(frameTimes, count, duration) {
 }
 
 /**
- * Router utama: coba SEMUA model Gemini berurutan (mutu -> murah) agar hemat free tier;
- * baru jatuh ke AIVene setelah seluruh Gemini gagal (mis. 429 kuota harian).
+ * Router utama: coba model Gemini Free Tier berurutan;
+ * setelah kuota gratis Gemini habis (429/gagal), HANYA gunakan AIVene dengan model qwen3.8-flash.
  * Mengembalikan { result, provider } atau melempar Error jika semuanya gagal.
  */
 export async function analyzeVideo(env, { frames, frameTimes, productName, affiliateLink, duration, gender, platform }) {
     const dur = Number(duration) || 15;
-    const times = normalizeFrameTimes(frameTimes, frames.length, dur);
+    const boundedFrames = Array.isArray(frames) ? frames.slice(0, MAX_AI_FRAMES) : [];
+    const boundedTimes = Array.isArray(frameTimes) ? frameTimes.slice(0, MAX_AI_FRAMES) : frameTimes;
+    const times = normalizeFrameTimes(boundedTimes, boundedFrames.length, dur);
     const prompt = buildAnalysisPrompt({ productName, affiliateLink, duration: dur, gender, frameTimes: times, platform });
     const fallbackEnabled = String(env.GEMINI_FALLBACK_ENABLED ?? 'true') !== 'false';
     const configuredModels = String(env.GEMINI_MODELS || env.GEMINI_MODEL || '')
-        .split(',').map(s => s.trim()).filter(Boolean);
-    const models = (!configuredModels.length || configuredModels[0] === 'gemini-3.5-flash-lite')
-        ? [...new Set([...DEFAULT_GEMINI_MODELS, ...configuredModels])]
-        : configuredModels;
+        .split(',').map(s => s.trim()).filter(Boolean)
+        .filter(m => !/^gemini-3\.[56]-flash$/i.test(m)); // blokir model mahal/non-free-tier (3.5-flash & 3.6-flash)
+    const models = configuredModels.length ? configuredModels : DEFAULT_GEMINI_MODELS;
     const errors = [];
     const deadline = Date.now() + AI_TOTAL_BUDGET_MS;
     const remaining = () => deadline - Date.now();
@@ -373,14 +380,16 @@ export async function analyzeVideo(env, { frames, frameTimes, productName, affil
         for (const model of models) {
             if (remaining() < 3000) { errors.push(`${model}: dilewati (waktu habis)`); break; }
             try {
-                const raw = await callGemini(env, model, frames, prompt, Math.min(AI_TIMEOUT_MS, remaining()));
+                const raw = await callGemini(env, model, boundedFrames, prompt, Math.min(AI_TIMEOUT_MS, remaining()));
                 const result = normalizeResult(raw, dur, { frameTimes: times });
                 if (result) return { result, provider: 'gemini:' + model };
                 errors.push(`${model}: JSON tidak valid`);
                 console.warn(`AI analyze model=${model} gagal: JSON tidak valid`);
             } catch (e) {
-                errors.push(`${model}: ${e.message}`); // 429/503/timeout -> coba model berikutnya
+                errors.push(`${model}: ${e.message}`);
                 console.warn(`AI analyze model=${model} gagal: ${e.message}`);
+                // Jika API key tidak valid / forbidden (401/403), jangan buang request ke model Gemini lain
+                if (e && (e.status === 401 || e.status === 403)) break;
             }
         }
     } else {
@@ -389,13 +398,13 @@ export async function analyzeVideo(env, { frames, frameTimes, productName, affil
 
     if (fallbackEnabled && env.AIVENE_API_KEY && remaining() > 3000) {
         try {
-            const raw = await callAivene(env, frames, prompt, Math.min(AI_TIMEOUT_MS, remaining()));
+            const raw = await callAivene(env, boundedFrames, prompt, Math.min(AI_TIMEOUT_MS, remaining()));
             const result = normalizeResult(raw, dur, { frameTimes: times });
-            if (result) return { result, provider: 'aivene' };
-            errors.push('aivene: JSON tidak valid');
+            if (result) return { result, provider: 'aivene:' + ONLY_AIVENE_MODEL };
+            errors.push(`aivene:${ONLY_AIVENE_MODEL}: JSON tidak valid`);
         } catch (e) {
-            errors.push(`aivene: ${e.message}`); // seluruh provider gagal -> lempar
-            console.warn(`AI analyze aivene gagal: ${e.message}`);
+            errors.push(`aivene:${ONLY_AIVENE_MODEL}: ${e.message}`);
+            console.warn(`AI analyze aivene:${ONLY_AIVENE_MODEL} gagal: ${e.message}`);
         }
     }
     const errDetail = errors.join(' | ') || 'Analisa AI gagal';

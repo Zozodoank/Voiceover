@@ -1,10 +1,8 @@
-// worker/lib/tts.js - Sintesis suara VO: Gemini TTS (utama) dengan rantai model per tier kualitas.
-// Gemini TTS: POST generateContent responseModalities=AUDIO -> PCM (audio/L16) ATAU container audio/wav
-// siap pakai (mis. model 3.8). AIVene hanya dipakai bila TTS_ALLOW_DEGRADE="true" (default MATI)
-// agar kualitas tidak pernah turun diam-diam ke voice robotik.
+// worker/lib/tts.js - Sintesis suara VO: Gemini TTS Direct (utama, Free Tier) & AIVene TTS
+// menggunakan model TTS Gemini yang SAMA per tier kualitas (tanpa pernah memakai tts-1).
 
 const TTS_TIMEOUT_DEFAULT_MS = 15000;
-const AIVENE_TTS_TIMEOUT_MS = 12000;
+const AIVENE_TTS_TIMEOUT_MS = 15000;
 const TTS_RETRY_DELAYS_MS = [600];
 
 // Tier kualitas memakai id NETRAL: nama model tidak boleh muncul di frontend.
@@ -16,7 +14,7 @@ export const TTS_TIER_META = {
     'tier-tinggi': { label: 'Tinggi', hint: 'Premium' },
 };
 
-// Normal -> 2.5 Flash TTS, Sedang -> 3.1 Flash TTS, Tinggi -> 3.8 Flash TTS (fallback 3.1).
+// Normal -> 3.8 Flash Lite TTS, Sedang -> 3.1 Flash TTS, Tinggi -> 3.8 Flash TTS.
 const DEFAULT_TIER_MODEL = {
     'tier-normal': 'gemini-3.8-flash-lite-tts',
     'tier-sedang': 'gemini-3.1-flash-tts-preview',
@@ -29,20 +27,20 @@ const TIER_MODEL_ENV = {
     'tier-tinggi': 'TTS_MODEL_TINGGI',
 };
 
-// Batas teks TTS: cukup untuk satu adegan utuh. Teks lebih panjang DITOLAK, bukan dipotong
-// diam-diam (pemotongan membuat audio lebih pendek dari subtitle = desync).
-export const TTS_MAX_TEXT = 4000;
+// Batas teks TTS: cukup untuk seluruh naskah video 6 adegan (~70 kata / ~500 karakter).
+// Diperketat ke 800 karakter agar tidak ada kebocoran ribuan token audio pada satu panggilan.
+export const TTS_MAX_TEXT = 800;
 
 /** True bila id tier dikenal frontend/worker. */
 export function isKnownTier(tier) {
     return TTS_TIER_IDS.includes(String(tier || ''));
 }
 
-/** Rantai model untuk satu tier: model utama + fallback (env TTS_FALLBACK_ORDER, pisahkan koma). */
+/** Rantai model untuk satu tier: model utama + fallback (env TTS_FALLBACK_ORDER, pisahkan koma). Tanpa model Pro mahal. */
 const DEFAULT_TIER_FALLBACKS = {
-    'tier-normal': ['gemini-3.1-flash-tts-preview', 'gemini-3.8-flash-tts', 'gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts'],
-    'tier-sedang': ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts', 'gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts'],
-    'tier-tinggi': ['gemini-3.1-flash-tts-preview', 'gemini-3.8-flash-lite-tts', 'gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts'],
+    'tier-normal': ['gemini-3.1-flash-tts-preview', 'gemini-3.8-flash-tts', 'gemini-2.5-flash-preview-tts'],
+    'tier-sedang': ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts', 'gemini-2.5-flash-preview-tts'],
+    'tier-tinggi': ['gemini-3.1-flash-tts-preview', 'gemini-3.8-flash-lite-tts', 'gemini-2.5-flash-preview-tts'],
 };
 
 export function tierModels(env, tier) {
@@ -51,7 +49,19 @@ export function tierModels(env, tier) {
     const extra = String((env && env.TTS_FALLBACK_ORDER) || '')
         .split(',').map(s => s.trim()).filter(Boolean);
     const fallbacks = extra.length ? extra : (DEFAULT_TIER_FALLBACKS[tier] || []);
-    return [...new Set([primary, ...fallbacks])];
+    // Blokir tts-1 dan gemini-2.5-pro-preview-tts (mahal / non-free-tier)
+    return [...new Set([primary, ...fallbacks])].filter(m => !/^(tts-1|gemini-2\.5-pro)/i.test(m));
+}
+
+/**
+ * Konversi ID model Gemini Direct ke ID model Gemini TTS yang identik pada katalog AIVene
+ * (mis. gemini-3.1-flash-tts-preview -> gemini-3.1-flash-tts). Jangan pernah memakai tts-1.
+ */
+export function toAiveneTtsModel(geminiModel) {
+    const m = String(geminiModel || '').trim();
+    if (m === 'gemini-3.1-flash-tts-preview') return 'gemini-3.1-flash-tts';
+    if (m === 'gemini-2.5-flash-preview-tts') return 'gemini-2.5-flash-tts';
+    return m.replace(/-preview$/i, '');
 }
 
 function ttsTimeout(env) {
@@ -285,7 +295,7 @@ async function callGeminiTts(env, model, { text, voiceName, emotion }, timeoutMs
         try { const j = await res.json(); msg = (j && j.error && j.error.message) || ''; } catch (e) { /* non-json */ }
         const err = new Error(`Gemini TTS HTTP ${res.status}${msg ? ': ' + msg : ''}`);
         err.status = res.status;
-        if (res.status === 429) throw err; // 429 pada satu model langsung fallback ke model Gemini berikutnya
+        if (res.status === 429 || res.status === 401 || res.status === 403) throw err; // langsung fallback tanpa retry
         if (res.status !== 503) throw err;
         lastErr = err;
         if (attempt < TTS_RETRY_DELAYS_MS.length) await sleep(retryDelay(res, attempt));
@@ -336,6 +346,7 @@ export async function synthesizeGemini(env, { text, voiceName, emotion, tier }) 
             errors.push(`${model}: ${(e && e.message) || e}`);
             // Terlihat di log server: memudahkan tahu model mana yang gagal lalu di-fallback.
             console.warn(`TTS gagal tier=${tier} model=${model}: ${(e && e.message) || e}`);
+            if (e && (e.status === 401 || e.status === 403)) break;
         }
     }
 
@@ -343,6 +354,90 @@ export async function synthesizeGemini(env, { text, voiceName, emotion, tier }) 
     console.error('Gemini TTS gagal:', errors.join(' | ') || 'tanpa detail');
     const err = new Error('Gemini TTS gagal membuat suara');
     err.status = statuses.includes(429) ? 429 : 502;
+    throw err;
+}
+
+/**
+ * Fallback AIVene TTS: menggunakan model TTS Gemini yang SAMA dengan Gemini Direct
+ * (gemini-3.8-flash-lite-tts, gemini-3.1-flash-tts, gemini-3.8-flash-tts) dan voice Gemini yang SAMA.
+ * DILARANG menggunakan model tts-1.
+ */
+export async function synthesizeAivene(env, { text, voiceName, tier }) {
+    const base = String((env && env.AIVENE_BASE_URL) || 'https://api.aivene.com/v1').replace(/\/$/, '');
+    const url = `${base}/audio/speech`;
+    const resolvedVoice = normalizeVoiceName(voiceName) || 'Kore';
+    const cleanText = stylePrompt(text);
+    const models = [...new Set(tierModels(env, tier).map(toAiveneTtsModel))].filter(Boolean);
+    const errors = [];
+    const statuses = [];
+
+    for (const model of models) {
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${env.AIVENE_API_KEY}`,
+                },
+                body: JSON.stringify({
+                    model,
+                    input: cleanText,
+                    voice: resolvedVoice,
+                    response_format: 'wav',
+                }),
+                signal: AbortSignal.timeout(AIVENE_TTS_TIMEOUT_MS),
+            });
+
+            if (!res.ok) {
+                let msg = '';
+                try { const j = await res.json(); msg = (j && j.error && j.error.message) || ''; } catch (e) { /* ignore */ }
+                const err = new Error(`AIVene TTS (${model}) HTTP ${res.status}${msg ? ': ' + msg.slice(0, 120) : ''}`);
+                err.status = res.status;
+                statuses.push(res.status);
+                errors.push(err.message);
+                console.warn(`AIVene TTS gagal tier=${tier} model=${model}: ${err.message}`);
+                // Jika API key invalid (401/403) atau saldo AIVene habis (402), jangan ulang ke model AIVene lain
+                if (res.status === 401 || res.status === 402 || res.status === 403) break;
+                continue;
+            }
+
+            const ab = await res.arrayBuffer();
+            const rawBytes = new Uint8Array(ab);
+            if (!rawBytes.byteLength) throw new Error(`AIVene TTS (${model}) mengembalikan audio kosong`);
+
+            const respMime = String(res.headers.get('content-type') || '').toLowerCase();
+            console.log(`TTS ok provider=aivene tier=${tier} model=${model} bytes=${rawBytes.byteLength}`);
+            if (isWavContainer(rawBytes) || respMime.includes('wav')) {
+                return {
+                    bytes: cleanWavContainer(rawBytes),
+                    contentType: 'audio/wav',
+                    provider: 'aivene',
+                    model,
+                };
+            }
+            if (respMime.includes('pcm') || respMime.includes('l16')) {
+                const { sampleRate, channels } = parsePcmMeta(respMime);
+                return {
+                    bytes: pcmToWav(rawBytes, sampleRate, channels),
+                    contentType: 'audio/wav',
+                    provider: 'aivene',
+                    model,
+                };
+            }
+            return {
+                bytes: rawBytes,
+                contentType: respMime || 'audio/mpeg',
+                provider: 'aivene',
+                model,
+            };
+        } catch (e) {
+            if (e && e.status) statuses.push(e.status);
+            errors.push(`${model}: ${(e && e.message) || e}`);
+        }
+    }
+
+    const err = new Error('AIVene TTS gagal: ' + (errors.join(' | ') || 'tanpa detail'));
+    err.status = statuses[0] || 502;
     throw err;
 }
 
@@ -464,9 +559,11 @@ export async function synthesizeTikTokTts({ text, voice = 'id_001' }) {
 }
 
 /**
- * Router utama suara VO: Gemini TTS (dengan rantai model fallback Gemini per tier).
- * Bila kuota harian Free Tier Gemini TTS (10 req/hari/model -> 429) habis atau server 503,
- * otomatis jatuh ke Google Translate TTS / TikTok Indonesian TTS agar Putar & Unduh selalu jalan.
+ * Router utama suara VO:
+ * 1) Gemini Direct TTS (dengan rantai model Gemini TTS per tier kualitas selama kuota gratis masih ada).
+ * 2) Bila kuota harian Free Tier Gemini Direct habis (429), fallback ke AIVene TTS menggunakan
+ *    model TTS Gemini dan voice Gemini yang SAMA (tanpa tts-1).
+ * 3) Bila AIVene juga belum ada saldo/gagal, jatuh ke Google Translate / TikTok Indonesian TTS agar Putar & Unduh tetap jalan.
  */
 export async function synthesizeVoice(env, { text, voiceName, emotion, tier }) {
     let lastError = null;
@@ -475,11 +572,21 @@ export async function synthesizeVoice(env, { text, voiceName, emotion, tier }) {
             return await synthesizeGemini(env, { text, voiceName, emotion, tier });
         } catch (e) {
             lastError = e;
-            console.warn(`Gemini TTS tier=${tier} gagal (${e && e.message ? e.message : e}). Beralih ke fallback TTS...`);
+            console.warn(`Gemini Direct TTS tier=${tier} gagal (${e && e.message ? e.message : e}). Beralih ke AIVene Gemini TTS...`);
         }
     } else {
         lastError = new Error('GEMINI_API_KEY belum dikonfigurasi di server.');
         lastError.status = 503;
+    }
+
+    const fallbackEnabled = String((env && env.GEMINI_FALLBACK_ENABLED) ?? 'true') !== 'false';
+    if (fallbackEnabled && env && env.AIVENE_API_KEY) {
+        try {
+            return await synthesizeAivene(env, { text, voiceName, tier });
+        } catch (aivErr) {
+            lastError = aivErr;
+            console.warn(`AIVene Gemini TTS tier=${tier} gagal (${aivErr && aivErr.message ? aivErr.message : aivErr}). Beralih ke fallback darurat...`);
+        }
     }
 
     if (env && String(env.TTS_FALLBACK_DISABLED || 'false').toLowerCase() === 'true') {

@@ -38,7 +38,7 @@ const MIN_SCENE_WINDOW_S = 1.2;      // jendela minimal agar tempo tetap wajar
 const VISUAL_DRIFT_TOL_S = 0.15;     // toleransi drift video vs jam audio saat pratinjau
 const VISUAL_DRIFT_TOL_EXPORT_S = 0.2;
 const LEAD_IN_S = 0.35;              // audio mulai setelah perekaman benar-benar berjalan
-const SCENE_RETRIES = 2;             // jumlah percobaan ulang otomatis saat 429/502/503
+const SCENE_RETRIES = 1;             // maksimum 1 kali percobaan ulang agar tidak memicu duplikasi panggilan token
 const SILENCE_RATIO = 0.006;         // ambang keheningan relatif terhadap peak
 const TRIM_PAD_S = 0.06;             // sisa padding setelah pemangkasan keheningan
 

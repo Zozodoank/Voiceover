@@ -65,7 +65,7 @@ router.post('/tts/preview', requireAuth, async (c) => {
 
     try {
         const { bytes, contentType, provider } = await synthesizeVoice(c.env, { text, voiceName, emotion, tier });
-        const ttl = provider === 'gemini' ? TTS_CACHE_TTL : TTS_FALLBACK_CACHE_TTL;
+        const ttl = (provider === 'gemini' || provider === 'aivene') ? TTS_CACHE_TTL : TTS_FALLBACK_CACHE_TTL;
         try {
             await c.env.ORDERS.put(cacheKey, bytes, {
                 metadata: { contentType, provider: provider || 'gemini' },

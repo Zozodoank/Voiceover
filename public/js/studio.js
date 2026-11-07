@@ -99,7 +99,7 @@ async function initiateCommercialGeneration() {
     setProgress(55, `<i class="fa-solid fa-circle-notch fa-spin"></i> Menganalisis video & menyusun naskah voice over...`);
     let resp = null;
     let lastAnalyzeErr = null;
-    const maxRetries = 2;
+    const maxRetries = 1;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
             if (attempt > 0) {
@@ -124,7 +124,8 @@ async function initiateCommercialGeneration() {
             break;
         } catch (err) {
             lastAnalyzeErr = err;
-            if ((err.status === 502 || err.status === 503 || err.status === 429) && attempt < maxRetries) {
+            // Hanya ulangi bila jaringan terputus (tanpa status HTTP), jangan ulangi 502/429 agar tidak membocorkan token ganda
+            if (!err.status && attempt < maxRetries) {
                 continue;
             }
             break;

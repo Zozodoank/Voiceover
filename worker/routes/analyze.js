@@ -8,9 +8,9 @@ import { loadTierPrices, TIER_LABELS } from '../lib/pricing.js';
 
 const router = new Hono();
 
-const MAX_FRAMES = 16;
+const MAX_FRAMES = 6;
 const MAX_FRAME_BYTES = 200 * 1024; // per frame (base64 dataUrl)
-const MAX_TOTAL_BYTES = 4 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 1.5 * 1024 * 1024;
 
 router.post('/analyze', requireAuth, async (c) => {
     const session = c.get('session');
