@@ -649,11 +649,8 @@ function playCachedSceneAudio(idx) {
     return true;
 }
 
-/** Perbarui overlay pratinjau subtitle + badge adegan. */
+/** Perbarui overlay pratinjau subtitle. */
 function updateOverlayDOM(sceneIdx, sub) {
-    const scene = (generatedScenesData || [])[sceneIdx] || {};
-    const badge = document.getElementById('currentSceneBadgeText');
-    if (badge && sceneIdx >= 0) badge.innerText = `Adegan ${sceneIdx + 1}: ${scene.emotion || ''}`;
     renderOverlaySubtitle(sub);
 }
 
@@ -721,7 +718,6 @@ async function startMergedPlayback() {
 
     const subOn = subtitlesEnabled();
     document.getElementById('subtitleOverlayContainer').classList.toggle('hidden', !subOn);
-    document.getElementById('sceneOverlayBadge').classList.toggle('hidden', !subOn);
     paintPlaybackClock(0, run.timeline.total);
 
     let lastKey = '';
@@ -1061,16 +1057,11 @@ function activeSubtitleWord(cue, t) {
 }
 
 function drawFrame(cctx, comp, idx, sub) {
-    const scene = (generatedScenesData || [])[idx] || {};
     const vis = getVisualSource();
     cctx.fillStyle = '#000'; cctx.fillRect(0, 0, comp.width, comp.height);
     if (vis.type === 'video' && vis.el && (vis.el.readyState >= 2 || vis.el.videoWidth > 0)) {
         try { drawCover(cctx, vis.el, comp.width, comp.height); } catch (e) { /* ignore */ }
     }
-    cctx.fillStyle = 'rgba(0,0,0,0.55)';
-    roundRect(cctx, 24, 24, 520, 64, 32); cctx.fill();
-    cctx.fillStyle = '#fff'; cctx.font = 'bold 32px Inter, sans-serif'; cctx.textAlign = 'left'; cctx.textBaseline = 'middle';
-    cctx.fillText(`Adegan ${idx + 1}: ${scene.emotion || ''}`, 40, 56);
     drawSubtitle(cctx, comp, sub);
 }
 
@@ -1135,10 +1126,8 @@ function sanitizeFile(s) {
     cb.addEventListener('change', () => {
         if (!isPlayingMerged) return;
         const on = subtitlesEnabled();
-        ['subtitleOverlayContainer', 'sceneOverlayBadge'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.classList.toggle('hidden', !on);
-        });
+        const el = document.getElementById('subtitleOverlayContainer');
+        if (el) el.classList.toggle('hidden', !on);
         if (!on) clearSubtitleText();
     });
 })();
