@@ -3,14 +3,20 @@
 
 import { ALLOWED_EMOTIONS } from './tts.js';
 
-const AI_TIMEOUT_MS = 10000;      // per panggilan model (agar model lambat tidak menahan rantai fallback)
+const AI_TIMEOUT_MS = 12000;      // per panggilan model (agar model lambat tidak menahan rantai fallback)
 const AI_TOTAL_BUDGET_MS = 55000; // anggaran total lintas provider - Cloudflare subrequest 30 dtk masing-masing
 const MAX_AI_FRAMES = 6;          // batas keras frame visual agar token gambar tidak bocor
 const DEFAULT_GEMINI_MODELS = [
     'gemini-3.1-flash-lite',
     'gemini-3-flash-preview',
-    'gemini-3.1-flash-lite-preview',
     'gemini-3.5-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.1-flash-lite-preview',
+    'gemini-3.7-flash',
+    'gemini-3.8-flash',
+    'gemini-flash-latest',
 ];
 const ONLY_AIVENE_MODEL = 'qwen3.8-flash';
 
@@ -257,16 +263,16 @@ async function callGemini(env, model, frames, prompt, timeoutMs) {
     }).filter(Boolean);
     parts.push({ text: prompt });
 
-    // Model Gemini 3.x non-lite memakai "thinking" yang menghabiskan jatah token
-    // sebelum menulis jawaban -> JSON terpotong (finish=MAX_TOKENS). Matikan thinking
-    // via thinkingBudget=0 agar token tersedia untuk output. Model *-lite tidak mendukung
-    // thinkingConfig (menolak 400), jadi hanya sisipkan untuk model non-lite.
+    // Model Gemini 3.x memakai "thinking" secara default yang menghabiskan waktu & jatah token
+    // sebelum menulis jawaban -> timeout atau JSON terpotong (finish=MAX_TOKENS). Matikan thinking
+    // via thinkingBudget=0 agar respons cepat (<1 detik pada 3.5/3.6-flash) dan hemat token.
+    // Hanya gemini-3.5-flash-lite & gemini-flash-lite-latest yang menolak thinkingConfig (400).
     const generationConfig = {
         responseMimeType: 'application/json',
         maxOutputTokens: 800,
         temperature: 0.8,
     };
-    if (/gemini-(3-flash|2\.5-flash)/i.test(model) && !/lite/i.test(model)) {
+    if (!/^(gemini-3\.5-flash-lite|gemini-flash-lite-latest)$/i.test(model)) {
         generationConfig.thinkingConfig = { thinkingBudget: 0 };
     }
 
@@ -369,9 +375,9 @@ export async function analyzeVideo(env, { frames, frameTimes, productName, affil
     const prompt = buildAnalysisPrompt({ productName, affiliateLink, duration: dur, gender, frameTimes: times, platform });
     const fallbackEnabled = String(env.GEMINI_FALLBACK_ENABLED ?? 'true') !== 'false';
     const configuredModels = String(env.GEMINI_MODELS || env.GEMINI_MODEL || '')
-        .split(',').map(s => s.trim()).filter(Boolean)
-        .filter(m => !/^gemini-3\.[56]-flash$/i.test(m)); // blokir model mahal/non-free-tier (3.5-flash & 3.6-flash)
-    const models = configuredModels.length ? configuredModels : DEFAULT_GEMINI_MODELS;
+        .split(',').map(s => s.trim()).filter(Boolean);
+    // Gabungkan konfigurasi env dengan seluruh daftar model analisis Gemini agar semua model dicoba berurutan
+    const models = [...new Set([...configuredModels, ...DEFAULT_GEMINI_MODELS])];
     const errors = [];
     const deadline = Date.now() + AI_TOTAL_BUDGET_MS;
     const remaining = () => deadline - Date.now();
