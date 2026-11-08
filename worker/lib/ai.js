@@ -20,11 +20,11 @@ const DEFAULT_GEMINI_MODELS = [
 ];
 const ONLY_AIVENE_MODEL = 'qwen3.8-flash';
 
-/** Aturan CTA per platform tujuan - menentukan frasa keranjang yang boleh/tidak boleh. */
+/** Aturan CTA per platform tujuan - menentukan frasa keranjang/link yang boleh/tidak boleh. */
 const PLATFORM_CTA = {
     shopee: {
         label: 'Shopee Video',
-        rule: 'CTA: akhiri naskah dengan ajakan klik KERANJANG ORANGE (mis. "klik keranjang orange sekarang, stok terbatas!"). DILARANG menyebut "keranjang kuning".',
+        rule: 'CTA: akhiri naskah dengan ajakan klik KERANJANG KUNING atau KERANJANG (mis. "klik keranjang kuning sekarang!" atau "cek keranjang di bawah ya, stok terbatas!"). DILARANG menyebut "keranjang orange".',
     },
     tiktok: {
         label: 'TikTok',
@@ -32,11 +32,11 @@ const PLATFORM_CTA = {
     },
     reels: {
         label: 'Instagram Reels',
-        rule: 'CTA BEBAS dan bervariasi (mis. "klik link di bio", "simpan video ini", "share ke teman", "komen minat buat link"). DILARANG menyebut keranjang kuning/orange.',
+        rule: 'CTA: akhiri naskah dengan ajakan klik LINK DI BAWAH atau CEK PRODUK DI BAWAH (mis. "klik link di bawah ya!" atau "cek produk di bawah sekarang!"). DILARANG menyebut keranjang kuning/orange.',
     },
     youtube: {
         label: 'YouTube Shorts',
-        rule: 'CTA BEBAS dan bervariasi (mis. "subscribe & nyalakan lonceng", "klik link di deskripsi", "tonton sampai habis"). DILARANG menyebut keranjang kuning/orange.',
+        rule: 'CTA: akhiri naskah dengan ajakan klik LINK DI BAWAH atau CEK PRODUK DI BAWAH (mis. "klik link di bawah ya!" atau "cek produk di bawah sekarang!"). DILARANG menyebut keranjang kuning/orange.',
     },
 };
 

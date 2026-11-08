@@ -157,7 +157,12 @@ async function initiateCommercialGeneration() {
 
     // Menerapkan Pola Emosi Berbeda di Setiap Adegan (Per Kalimat Voice Over)
     generatedScenesData = r.scenes;
-    const platformCtaText = { shopee: 'cek keranjang orange sekarang', tiktok: 'cek keranjang kuning di bawah', reels: 'klik link di bio', youtube: 'subscribe & cek link di deskripsi' }[platform] || 'cek keranjang sekarang';
+    const platformCtaText = {
+        shopee: 'cek keranjang kuning / keranjang sekarang',
+        tiktok: 'cek keranjang kuning di bawah',
+        reels: 'klik link di bawah atau cek produk di bawah',
+        youtube: 'klik link di bawah atau cek produk di bawah'
+    }[platform] || 'cek keranjang kuning sekarang';
     generatedCaptionText = r.caption || `Wajib punya! ${productName} — ${platformCtaText}! ✨`;
     generatedHashtagsText = r.hashtags || `#RacunShopee #${productName.replace(/\s+/g, '')} #FYP #SkincareIndonesia`;
 
