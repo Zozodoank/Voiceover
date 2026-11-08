@@ -3,6 +3,11 @@
 name = "voiceover"
 main = "worker/index.js"
 compatibility_date = "2026-10-01"
+workers_dev = true
+routes = [
+    { pattern = "aisuara.biz.id", custom_domain = true },
+    { pattern = "www.aisuara.biz.id", custom_domain = true }
+]
 
 # Seluruh isi public/ dilayani sebagai static assets (landing, app, admin, css, js)
 [assets]
