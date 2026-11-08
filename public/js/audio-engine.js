@@ -992,11 +992,10 @@ async function exportMergedVideoWebM() {
         }
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const ext = actualMime.indexOf('mp4') !== -1 ? 'mp4' : 'webm';
-        a.href = url; a.download = `VO_${name}_${Date.now()}.${ext}`; a.style.display = 'none';
+        a.href = url; a.download = `VO_${name}_${Date.now()}.mp4`; a.style.display = 'none';
         document.body.appendChild(a); a.click();
         setTimeout(() => { try { document.body.removeChild(a); } catch (e) { /* ignore */ } URL.revokeObjectURL(url); }, 4000);
-        showToast('Video (VO + subtitle) berhasil diunduh!', 'success');
+        showToast('Video MP4 (VO + subtitle) berhasil diunduh!', 'success');
     } catch (e) {
         console.error('Export video error:', e);
         showToast('Pembuatan video belum berhasil. Silakan coba lagi atau unduh .SRT.', 'error');
@@ -1009,11 +1008,15 @@ async function exportMergedVideoWebM() {
 
 function pickWebmMime() {
     const cands = [
+        'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+        'video/mp4;codecs=avc1,mp4a.40.2',
+        'video/mp4;codecs=h264,aac',
+        'video/mp4;codecs=avc1,opus',
+        'video/mp4',
+        'video/webm;codecs=h264,opus',
         'video/webm;codecs=vp8,opus',
         'video/webm;codecs=vp9,opus',
-        'video/webm',
-        'video/mp4;codecs=avc1,mp4a.40.2',
-        'video/mp4'
+        'video/webm'
     ];
     for (const m of cands) {
         if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
