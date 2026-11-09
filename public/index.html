@@ -28,7 +28,9 @@
             <span class="font-extrabold text-base tracking-tight">Pengisi suara video</span>
         </div>
         <div id="navLoginSlot" class="flex items-center gap-2">
-            <button onclick="scrollToLogin()" class="px-3.5 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-xs font-bold transition">Masuk</button>
+            <button onclick="openLoginModal()" class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-brand-600/25">
+                <i class="fa-solid fa-right-to-bracket"></i> Masuk
+            </button>
         </div>
     </nav>
 
@@ -45,7 +47,7 @@
                 Upload video affiliate Anda. AI menganalisa adegan, lalu menyusun naskah Voice Over 3 pola emosi, caption, dan hashtag &mdash; siap tempel ke TikTok &amp; Shopee Video.
             </p>
             <div class="pt-2">
-                <button onclick="scrollToLogin()" class="px-6 py-3 rounded-2xl bg-gradient-to-r from-brand-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 font-extrabold text-sm shadow-xl shadow-brand-600/30 transition">
+                <button onclick="openLoginModal()" class="px-6 py-3 rounded-2xl bg-gradient-to-r from-brand-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 font-extrabold text-sm shadow-xl shadow-brand-600/30 transition">
                     <i class="fa-solid fa-rocket mr-1"></i> Mulai Gratis, Bayar Per Pemakaian
                 </button>
             </div>
@@ -91,22 +93,37 @@
             <p class="text-[11px] text-slate-500">Riwayat proyek dan saldo tersimpan aman serta privat khusus untuk akun Google Anda.</p>
         </section>
 
-        <!-- LOGIN -->
-        <section id="loginSection" class="pb-16 max-w-md mx-auto">
-            <div class="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl space-y-4 text-center">
-                <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand-500 to-purple-600 mx-auto flex items-center justify-center shadow-lg shadow-brand-500/30">
-                    <i class="fa-solid fa-right-to-bracket text-white text-lg"></i>
-                </div>
-                <div>
-                    <h2 class="font-extrabold text-base">Masuk untuk Mulai</h2>
-                    <p class="text-xs text-slate-400 mt-1">Masuk dengan akun Google secara praktis &mdash; tanpa password rumit, aman dan terjaga.</p>
-                </div>
-                <div id="googleBtnContainer" class="flex justify-center min-h-[44px] items-center">
-                    <p id="loginHint" class="text-[11px] text-slate-500"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Menyiapkan tombol Google&hellip;</p>
-                </div>
-            </div>
+        <!-- CTA BAWAH -->
+        <section class="pb-16 max-w-md mx-auto text-center">
+            <button onclick="openLoginModal()" class="w-full py-3.5 px-6 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-700 font-bold text-xs sm:text-sm text-white shadow-lg transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-right-to-bracket text-brand-400"></i> Masuk dengan Akun Google
+            </button>
         </section>
     </main>
+
+    <!-- POPUP MODAL LOGIN OAUTH (TENGAH HALAMAN) -->
+    <div id="loginModal" onclick="if(event.target===this)closeLoginModal()" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-700/90 shadow-2xl max-w-md w-full space-y-5 text-center relative">
+            <button onclick="closeLoginModal()" aria-label="Tutup" class="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-purple-600 mx-auto flex items-center justify-center shadow-lg shadow-brand-500/30">
+                <i class="fa-solid fa-user-shield text-white text-xl"></i>
+            </div>
+            <div class="space-y-1.5">
+                <h2 class="font-extrabold text-lg text-white">Masuk ke Studio</h2>
+                <p class="text-xs text-slate-400 leading-relaxed">Masuk dengan akun Google secara praktis &mdash; tanpa password rumit, riwayat proyek dan saldo tersimpan aman.</p>
+            </div>
+            <div class="py-2 px-4 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <div id="googleBtnContainer" class="flex justify-center min-h-[48px] items-center py-1">
+                    <p id="loginHint" class="text-[11px] text-slate-400"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Menyiapkan tombol Google OAuth&hellip;</p>
+                </div>
+            </div>
+            <p class="text-[11px] text-slate-500">
+                <i class="fa-solid fa-lock text-emerald-400 mr-1"></i> Autentikasi resmi Google OAuth 2.0
+            </p>
+        </div>
+    </div>
 
     <footer class="border-t border-slate-900 py-5 text-center text-[11px] text-slate-600">
         &copy; 2026 MEGAKOMINDO &middot; Pengisi suara video Enterprise
@@ -122,9 +139,22 @@
             return false;
         }
 
-        function scrollToLogin() {
-            document.getElementById('loginSection').scrollIntoView({ behavior: 'smooth' });
+        let _gisInitialized = false;
+
+        function openLoginModal() {
+            const modal = document.getElementById('loginModal');
+            if (modal) modal.classList.remove('hidden');
+            if (!_gisInitialized) initGoogleLogin();
         }
+
+        function closeLoginModal() {
+            const modal = document.getElementById('loginModal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeLoginModal();
+        });
 
         async function initGoogleLogin() {
             let clientId = '';
@@ -152,6 +182,7 @@
             }
             google.accounts.id.initialize({
                 client_id: clientId,
+                ux_mode: 'popup',
                 callback: async (resp) => {
                     try {
                         const r = await fetch('/api/auth/session', {
@@ -168,10 +199,14 @@
                     }
                 }
             });
-            google.accounts.id.renderButton(document.getElementById('googleBtnContainer'), {
-                theme: 'filled_black', size: 'large', shape: 'pill', text: 'signin_with', width: 280
-            });
-            if (hint) hint.remove();
+            const container = document.getElementById('googleBtnContainer');
+            if (container) {
+                container.innerHTML = '';
+                google.accounts.id.renderButton(container, {
+                    theme: 'filled_blue', size: 'large', shape: 'pill', text: 'signin_with', width: 280
+                });
+            }
+            _gisInitialized = true;
         }
 
         // Harga mengikuti pengaturan admin (/api/pricing). Gagal = pakai angka statis di atas.

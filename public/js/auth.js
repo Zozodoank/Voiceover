@@ -27,11 +27,12 @@ async function renderGoogleButton() {
     }
     google.accounts.id.initialize({
         client_id: clientId,
+        ux_mode: 'popup',
         callback: handleGoogleCredential,
     });
     container.innerHTML = '';
     google.accounts.id.renderButton(container, {
-        theme: 'filled_black', size: 'large', shape: 'pill', text: 'signin_with', width: 280
+        theme: 'filled_blue', size: 'large', shape: 'pill', text: 'signin_with', width: 280
     });
 }
 
