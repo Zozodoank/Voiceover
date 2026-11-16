@@ -426,6 +426,18 @@
                                 </div>
                             </label>
                         </div>
+                        <div class="pt-1">
+                            <div class="flex items-center justify-between mb-1">
+                                <label for="customCtaInput" class="block text-xs font-semibold text-slate-300">
+                                    Custom CTA <span class="text-[11px] font-normal text-slate-400">(Opsional &mdash; tulis kalimat ajakan sendiri)</span>
+                                </label>
+                                <button type="button" onclick="document.getElementById('customCtaInput').value=''" class="text-[10px] text-slate-400 hover:text-slate-200 transition">Hapus</button>
+                            </div>
+                            <div class="relative">
+                                <i class="fa-solid fa-bullhorn absolute left-3.5 top-3 text-slate-500 text-xs"></i>
+                                <input type="text" id="customCtaInput" maxlength="160" placeholder="Kosongkan untuk CTA default platform, atau tulis CTA Anda sendiri..." class="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 focus:border-brand-500 rounded-xl text-xs text-white placeholder-slate-500 outline-none transition">
+                            </div>
+                        </div>
                     </div>
 
                     <button id="generateAllBtn" onclick="initiateCommercialGeneration()" class="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-brand-600 via-indigo-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-brand-600/30 transition flex items-center justify-center gap-2">

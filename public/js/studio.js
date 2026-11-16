@@ -55,6 +55,7 @@ async function initiateCommercialGeneration() {
     const gender = selectedVoice.gender;
     const voiceName = selectedVoice.name;
     const platform = (document.querySelector('input[name="ctaPlatform"]:checked') || {}).value || 'shopee';
+    const customCta = (document.getElementById('customCtaInput')?.value || '').trim();
 
     // Gerbang saldo hanya cermin UI - Worker tetap memvalidasi & mendebit dari D1
     if (!userUnlimited && userBalance < modelPrice) {
@@ -117,6 +118,7 @@ async function initiateCommercialGeneration() {
                     gender,
                     voiceName,
                     platform,
+                    customCta,
                     modelValue
                 }
             });
@@ -157,12 +159,12 @@ async function initiateCommercialGeneration() {
 
     // Menerapkan Pola Emosi Berbeda di Setiap Adegan (Per Kalimat Voice Over)
     generatedScenesData = r.scenes;
-    const platformCtaText = {
+    const platformCtaText = customCta || ({
         shopee: 'cek keranjang kuning / keranjang sekarang',
         tiktok: 'cek keranjang kuning di bawah',
         reels: 'klik link di bawah atau cek produk di bawah',
         youtube: 'klik link di bawah atau cek produk di bawah'
-    }[platform] || 'cek keranjang kuning sekarang';
+    }[platform] || 'cek keranjang kuning sekarang');
     generatedCaptionText = r.caption || `Wajib punya! ${productName} — ${platformCtaText}! ✨`;
     generatedHashtagsText = r.hashtags || `#RacunShopee #${productName.replace(/\s+/g, '')} #FYP #SkincareIndonesia`;
 
@@ -184,6 +186,7 @@ async function initiateCommercialGeneration() {
         modelValue,
         modelLabel: resolvedModelLabel,
         platform,
+        customCta,
         gender,
         voiceName,
         videoDuration: duration,

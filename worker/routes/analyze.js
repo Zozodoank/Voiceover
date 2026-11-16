@@ -50,6 +50,7 @@ router.post('/analyze', requireAuth, async (c) => {
         : null;
 
     const platform = ['shopee', 'tiktok', 'reels', 'youtube'].includes(body.platform) ? body.platform : 'shopee';
+    const customCta = String(body.customCta || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 160);
 
     // Voice terpilih menentukan gender nada naskah (fallback ke body.gender bila voice tak dikenal)
     const voiceName = typeof body.voiceName === 'string' ? body.voiceName : '';
@@ -84,6 +85,7 @@ router.post('/analyze', requireAuth, async (c) => {
             duration,
             gender,
             platform,
+            customCta,
             voiceName,
         });
     } catch (e) {

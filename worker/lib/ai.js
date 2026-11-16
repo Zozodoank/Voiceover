@@ -49,11 +49,15 @@ export function wordBudgetForSeconds(sec) {
     return Math.max(4, Math.round(s * WORD_BUDGET_PER_SECOND));
 }
 
-/** Prompt analisa dalam Bahasa Indonesia: timestamp per adegan + emosi natural + CTA platform. */
-export function buildAnalysisPrompt({ productName, affiliateLink, duration, gender, frameTimes, platform }) {
+/** Prompt analisa dalam Bahasa Indonesia: timestamp per adegan + emosi natural + CTA platform/custom. */
+export function buildAnalysisPrompt({ productName, affiliateLink, duration, gender, frameTimes, platform, customCta }) {
     const dur = Number(duration) || 15;
     const voice = gender === 'female' ? 'wanita' : 'pria';
     const cta = PLATFORM_CTA[platform] || PLATFORM_CTA.shopee;
+    const cleanCustomCta = String(customCta || '').replace(/[\r\n\t"]+/g, ' ').trim().slice(0, 160);
+    const ctaRule = cleanCustomCta
+        ? `CTA KHUSUS PENGGUNA (WAJIB IKUTI): akhiri adegan terakhir dengan ajakan CTA "${cleanCustomCta}" secara natural (abaikan aturan default platform bila berbeda).`
+        : cta.rule;
     // Detik frame yang SEBENARNYA (dari ekstraksi di browser), bukan asumsi 1 frame = 1 detik:
     // tanpa ini model menaruh batas adegan di momen visual yang salah.
     const times = (frameTimes && frameTimes.length ? frameTimes : [0])
@@ -80,11 +84,11 @@ export function buildAnalysisPrompt({ productName, affiliateLink, duration, gend
         budgetLines.join('\n'),
         `Jangan melebihi anggaran kata pada jendela yang dipilih, dan jangan memotong CTA.`,
         `3) EMOSI PER ADEGAN (natural & terkurasi): nilai "emotion" tiap adegan WAJIB hanya dari: Penasaran, Prihatin, Terinspirasi, Yakin, Antusias, Terbukti, Mendesak, Ramah. Emosi HARUS menyesuaikan isi visual adegan itu secara natural (BUKAN urutan template kaku), dan DILARANG memakai label yang sama pada dua adegan berurutan. Susun busur affiliate longgar: buka dengan kait yang memancing (Penasaran/Prihatin), lanjut solusi & keyakinan (Yakin/Terinspirasi), bukti & kesaksian (Antusias/Terbukti), tutup ajakan (Mendesak/Ramah). Seluruh kalimat VO tetap berenergi positif dan meyakinkan.`,
-        `4) CTA: ${cta.rule} Adegan TERAKHIR wajib memuat kalimat CTA ini, dan "caption" juga memuat CTA yang sama.`,
+        `4) CTA: ${ctaRule} Adegan TERAKHIR wajib memuat kalimat CTA ini, dan "caption" juga memuat CTA yang sama.`,
         `Balik HANYA JSON valid dengan skema:`,
         `{"research":"ringkasan riset produk 1-2 kalimat berbahasa Indonesia",`,
         `"scenes":[{"start":0,"end":5,"emotion":"Penasaran","text":"kalimat VO"}, ...lalu 3-6 adegan membagi ${dur} detik secara berurutan hingga adegan terakhir end=${dur}],`,
-        `"caption":"caption promosi menarik berbahasa Indonesia, memuat CTA ${cta.label}",`,
+        `"caption":"caption promosi menarik berbahasa Indonesia, memuat CTA ${cleanCustomCta || cta.label}",`,
         `"hashtags":"#Tag1 #Tag2 ... 5-8 hashtag relevan"}`,
         `Satu adegan = satu kalimat utuh (boleh maksimal dua kalimat pendek).`,
     ].join('\n');
@@ -367,12 +371,12 @@ function normalizeFrameTimes(frameTimes, count, duration) {
  * setelah kuota gratis Gemini habis (429/gagal), HANYA gunakan AIVene dengan model qwen3.8-flash.
  * Mengembalikan { result, provider } atau melempar Error jika semuanya gagal.
  */
-export async function analyzeVideo(env, { frames, frameTimes, productName, affiliateLink, duration, gender, platform }) {
+export async function analyzeVideo(env, { frames, frameTimes, productName, affiliateLink, duration, gender, platform, customCta }) {
     const dur = Number(duration) || 15;
     const boundedFrames = Array.isArray(frames) ? frames.slice(0, MAX_AI_FRAMES) : [];
     const boundedTimes = Array.isArray(frameTimes) ? frameTimes.slice(0, MAX_AI_FRAMES) : frameTimes;
     const times = normalizeFrameTimes(boundedTimes, boundedFrames.length, dur);
-    const prompt = buildAnalysisPrompt({ productName, affiliateLink, duration: dur, gender, frameTimes: times, platform });
+    const prompt = buildAnalysisPrompt({ productName, affiliateLink, duration: dur, gender, frameTimes: times, platform, customCta });
     const fallbackEnabled = String(env.GEMINI_FALLBACK_ENABLED ?? 'true') !== 'false';
     const configuredModels = String(env.GEMINI_MODELS || env.GEMINI_MODEL || '')
         .split(',').map(s => s.trim()).filter(Boolean);

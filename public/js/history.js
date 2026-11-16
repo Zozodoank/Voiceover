@@ -89,6 +89,8 @@ function loadHistoryRecord(idx) {
         const pRadio = document.querySelector(`input[name="ctaPlatform"][value="${item.platform}"]`);
         if (pRadio) pRadio.checked = true;
     }
+    const customCtaEl = document.getElementById('customCtaInput');
+    if (customCtaEl) customCtaEl.value = item.customCta || '';
 
     generatedScenesData = item.scenes;
     renderScenesTimeline(generatedScenesData);
