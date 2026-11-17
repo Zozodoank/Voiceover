@@ -31,11 +31,47 @@ function refreshActiveModelStatusLabel() {
     refreshActiveModelStatusLabel();
 })();
 
+function showMissingTitleModal() {
+    const modal = document.getElementById('missingTitleModal');
+    const inp = document.getElementById('productNameInput');
+    const errEl = document.getElementById('productNameError');
+    if (inp) inp.classList.add('border-rose-500', 'ring-2', 'ring-rose-500/40');
+    if (errEl) errEl.classList.remove('hidden');
+    if (modal) modal.classList.remove('hidden');
+}
+
+function closeMissingTitleModal(focusInput) {
+    const modal = document.getElementById('missingTitleModal');
+    if (modal) modal.classList.add('hidden');
+    if (focusInput) {
+        const inp = document.getElementById('productNameInput');
+        if (inp) {
+            inp.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            inp.focus();
+        }
+    }
+}
+
+(function wireTitleValidationReset() {
+    const inp = document.getElementById('productNameInput');
+    if (inp) {
+        inp.addEventListener('input', () => {
+            if (inp.value.trim()) {
+                inp.classList.remove('border-rose-500', 'ring-2', 'ring-rose-500/40');
+                const errEl = document.getElementById('productNameError');
+                if (errEl) errEl.classList.add('hidden');
+            }
+        });
+    }
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeMissingTitleModal(false);
+    });
+})();
+
 async function initiateCommercialGeneration() {
     const productName = document.getElementById('productNameInput').value.trim();
     if (!productName) {
-        showToast('Mohon masukkan nama produk terlebih dahulu!', 'error');
-        document.getElementById('productNameInput').focus();
+        showMissingTitleModal();
         return;
     }
 
@@ -244,8 +280,8 @@ function renderScenesTimeline(scenes) {
                 </div>
                 <span class="text-[10px] text-slate-400 font-mono" data-scene-time="${idx}">${esc(s.start)}s - ${esc(s.end)}s</span>
             </div>
-            <div class="flex items-center justify-between gap-2">
-                <p class="text-xs font-semibold text-slate-200 truncate flex-1">${esc(s.text)}</p>
+            <div class="flex items-start justify-between gap-2">
+                <p class="text-xs font-semibold text-slate-200 leading-relaxed flex-1 min-w-0 break-words">${esc(s.text)}</p>
                 <button data-scene-play="${idx}" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs shrink-0 flex items-center gap-1">
                     <i class="fa-solid fa-volume-high text-brand-400"></i> Dengar
                 </button>

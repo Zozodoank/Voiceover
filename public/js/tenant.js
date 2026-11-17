@@ -39,7 +39,10 @@ function applySessionToHeader() {
     const label = document.getElementById('authUserLabel');
     if (label) label.innerText = (CURRENT_USER && (CURRENT_USER.name || CURRENT_USER.email)) || 'Masuk';
     const logoutBtn = document.getElementById('logoutHeaderBtn');
-    if (logoutBtn) logoutBtn.classList.toggle('hidden', !CURRENT_USER);
+    if (logoutBtn) {
+        logoutBtn.classList.toggle('hidden', !CURRENT_USER);
+        logoutBtn.classList.toggle('flex', !!CURRENT_USER);
+    }
     const adminBtn = document.getElementById('adminHeaderBtn');
     if (adminBtn) {
         adminBtn.classList.remove('hidden');

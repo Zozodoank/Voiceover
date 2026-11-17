@@ -35,58 +35,82 @@
 
     <!-- HEADER -->
     <header class="sticky top-0 z-40 backdrop-blur-lg bg-slate-900/90 border-b border-slate-800/80 w-full">
-        <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2.5 sm:py-0 sm:h-16 flex flex-wrap items-center justify-between gap-2">
+        <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2.5 lg:py-0 lg:h-16 flex flex-wrap lg:flex-nowrap items-center justify-between gap-2">
             <!-- Brand Title -->
-            <div class="flex items-center gap-2.5 min-w-0">
-                <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-brand-500 to-purple-600 flex items-center justify-center shadow-lg shadow-brand-500/30 shrink-0">
-                    <i class="fa-solid fa-microphone-lines text-white text-sm sm:text-lg"></i>
+            <div class="order-1 flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1 lg:flex-initial">
+                <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-brand-500 to-purple-600 flex items-center justify-center shadow-lg shadow-brand-500/30 shrink-0">
+                    <i class="fa-solid fa-microphone-lines text-white text-sm sm:text-base"></i>
                 </div>
                 <div class="min-w-0">
-                    <div class="flex items-center gap-1.5 flex-wrap">
-                        <h1 class="font-bold text-sm sm:text-lg tracking-tight text-white truncate">Pengisi suara video</h1>
-                        <span class="px-1.5 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30 rounded-full shrink-0">Enterprise</span>
+                    <div class="flex items-center gap-1.5">
+                        <h1 class="font-bold text-sm sm:text-base lg:text-lg tracking-tight text-white truncate">Pengisi suara video</h1>
+                        <span class="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30 rounded-full shrink-0">Enterprise</span>
                     </div>
-                    <p class="text-xs text-slate-400 hidden md:block truncate">Voice Over beremosi + subtitle otomatis untuk video produk Anda</p>
+                    <p class="text-xs text-slate-400 hidden xl:block truncate">Voice Over beremosi + subtitle otomatis untuk video produk Anda</p>
                 </div>
             </div>
 
-            <!-- Action Buttons -->
-            <div class="flex items-center gap-1.5 sm:gap-2.5 ml-auto shrink-0 flex-wrap justify-end">
+            <!-- Navigasi Tab & Saldo (Baris 2 rapi di HP, menyatu di Desktop) -->
+            <div class="order-3 lg:order-2 w-full lg:w-auto lg:ml-auto flex flex-wrap items-center justify-between lg:justify-end gap-1.5 sm:gap-2 min-w-0">
                 <!-- Tab View Switcher (Studio / History) -->
-                <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
-                    <button id="navStudioBtn" onclick="switchMainTab('studio')" class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-brand-600 text-white transition flex items-center gap-1">
-                        <i class="fa-solid fa-clapperboard"></i> <span class="hidden sm:inline">Studio</span>
+                <div class="flex items-center bg-slate-950 p-0.5 sm:p-1 rounded-xl border border-slate-800 shrink-0">
+                    <button id="navStudioBtn" onclick="switchMainTab('studio')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-bold bg-brand-600 text-white transition flex items-center gap-1 sm:gap-1.5 whitespace-nowrap">
+                        <i class="fa-solid fa-clapperboard"></i> <span>Studio</span>
                     </button>
-                    <button id="navHistoryBtn" onclick="switchMainTab('history')" class="px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition flex items-center gap-1">
-                        <i class="fa-solid fa-clock-rotate-left"></i> <span class="hidden sm:inline">Riwayat</span> <span id="historyCountBadge" class="px-1.5 py-0.2 bg-slate-800 rounded-full text-[10px]">0</span>
+                    <button id="navHistoryBtn" onclick="switchMainTab('history')" class="px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-bold text-slate-400 hover:text-white transition flex items-center gap-1 sm:gap-1.5 whitespace-nowrap">
+                        <i class="fa-solid fa-clock-rotate-left"></i> <span>Riwayat</span> <span id="historyCountBadge" class="px-1.5 py-0.2 bg-slate-800 rounded-full text-[10px]">0</span>
                     </button>
                 </div>
 
                 <!-- Saldo / QRIS Top Up -->
-                <button onclick="openTopUpQrisModal()" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-[11px] sm:text-xs font-bold text-emerald-300 transition flex items-center gap-1.5 whitespace-nowrap shrink-0">
-                    <i class="fa-solid fa-wallet text-emerald-400"></i>
-                    <span id="userBalanceBadge">Rp 0</span>
-                    <span class="px-1.5 py-0.5 bg-emerald-500 text-slate-950 rounded text-[9px] sm:text-[10px] font-extrabold">+ ISI</span>
+                <button onclick="openTopUpQrisModal()" class="px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-[11px] sm:text-xs font-bold text-emerald-300 transition flex items-center gap-1 sm:gap-1.5 whitespace-nowrap max-w-full">
+                    <i class="fa-solid fa-wallet text-emerald-400 shrink-0"></i>
+                    <span id="userBalanceBadge" class="truncate max-w-[92px] sm:max-w-none">Rp 0</span>
+                    <span class="px-1.5 py-0.5 bg-emerald-500 text-slate-950 rounded text-[9px] sm:text-[10px] font-extrabold shrink-0">+ ISI</span>
                 </button>
+            </div>
 
+            <!-- Akun, Admin & Keluar (Baris 1 kanan di HP) -->
+            <div class="order-2 lg:order-3 flex items-center gap-1 sm:gap-1.5 shrink-0">
                 <!-- Dasbor Superadmin (dirender hanya jika sesi unlimited) -->
-                <a id="adminHeaderBtn" href="admin.html" class="hidden px-2.5 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-[11px] sm:text-xs font-bold text-purple-300 items-center gap-1.5 whitespace-nowrap transition shrink-0">
+                <a id="adminHeaderBtn" href="admin.html" title="Dasbor Admin" class="hidden px-2 sm:px-2.5 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-[11px] sm:text-xs font-bold text-purple-300 items-center gap-1.5 whitespace-nowrap transition shrink-0">
                     <i class="fa-solid fa-crown"></i>
                     <span class="hidden sm:inline">Admin</span>
                 </a>
 
                 <!-- Auth Trigger -->
-                <button id="authHeaderBtn" onclick="openAuthModal()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] sm:text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap transition shrink-0">
+                <button id="authHeaderBtn" onclick="openAuthModal()" class="px-2 sm:px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] sm:text-xs font-semibold text-white flex items-center gap-1 sm:gap-1.5 whitespace-nowrap transition shrink-0">
                     <i class="fa-solid fa-user-shield text-brand-400"></i>
-                    <span id="authUserLabel" class="max-w-[80px] sm:max-w-none truncate">Masuk</span>
+                    <span id="authUserLabel" class="max-w-[64px] sm:max-w-[120px] truncate">Masuk</span>
                 </button>
-                <button id="logoutHeaderBtn" onclick="handleLogout()" class="hidden px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 border border-slate-700 text-[11px] sm:text-xs font-semibold text-slate-300 items-center gap-1.5 whitespace-nowrap transition shrink-0">
+                <button id="logoutHeaderBtn" onclick="handleLogout()" title="Keluar" class="hidden px-2 sm:px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 border border-slate-700 text-[11px] sm:text-xs font-semibold text-slate-300 items-center gap-1.5 whitespace-nowrap transition shrink-0">
                     <i class="fa-solid fa-right-from-bracket"></i>
                     <span class="hidden sm:inline">Keluar</span>
                 </button>
             </div>
         </div>
     </header>
+
+    <!-- POPUP PERINGATAN JUDUL WAJIB DIISI -->
+    <div id="missingTitleModal" onclick="if(event.target===this)closeMissingTitleModal(false)" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="bg-slate-900 border-2 border-rose-500/70 rounded-3xl max-w-sm w-full p-6 shadow-2xl shadow-rose-950/50 space-y-4 text-center relative">
+            <button onclick="closeMissingTitleModal(false)" aria-label="Tutup" class="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <div class="w-14 h-14 rounded-2xl bg-rose-500/20 border border-rose-500/40 mx-auto flex items-center justify-center text-rose-400 shadow-lg shadow-rose-500/20">
+                <i class="fa-solid fa-triangle-exclamation text-2xl"></i>
+            </div>
+            <div class="space-y-1.5">
+                <h3 class="text-lg font-extrabold text-white">Judul Wajib Diisi!</h3>
+                <p class="text-xs text-slate-300 leading-relaxed">
+                    Anda belum mengisi <strong>Judul / Nama Produk</strong>. Harap masukkan judul produk terlebih dahulu sebelum membuat Voice Over.
+                </p>
+            </div>
+            <button onclick="closeMissingTitleModal(true)" class="w-full py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-rose-600/30 transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-pen-to-square"></i> Isi Judul Sekarang
+            </button>
+        </div>
+    </div>
 
     <!-- AUTH MODAL -->
     <div id="authModal" onclick="if(event.target===this)closeAuthModal()" class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
@@ -307,11 +331,14 @@
                         <span>Detail Produk &amp; Subtitle</span>
                     </h2>
                     <div>
-                        <label class="block text-xs font-semibold text-slate-300 mb-1.5">Nama Produk / Merk Lengkap <span class="text-rose-400">*</span></label>
+                        <label for="productNameInput" class="block text-xs font-semibold text-slate-300 mb-1.5">Judul Video / Nama Produk <span class="text-rose-400">* Wajib diisi</span></label>
                         <div class="relative">
                             <i class="fa-solid fa-box-open absolute left-3.5 top-3 text-slate-500 text-sm"></i>
                             <input type="text" id="productNameInput" placeholder="Contoh: Skintific 5X Ceramide Barrier Moisture Gel" class="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-700 focus:border-brand-500 rounded-xl text-xs sm:text-sm text-white placeholder-slate-500 outline-none transition">
                         </div>
+                        <p id="productNameError" class="hidden mt-1.5 text-[11px] font-semibold text-rose-400 flex items-center gap-1">
+                            <i class="fa-solid fa-circle-exclamation"></i> Judul wajib diisi sebelum membuat Voice Over.
+                        </p>
                     </div>
                     <div>
                         <label class="block text-xs font-semibold text-slate-300 mb-1.5">Link Affiliate Produk</label>
@@ -435,8 +462,9 @@
                             </div>
                             <div class="relative">
                                 <i class="fa-solid fa-bullhorn absolute left-3.5 top-3 text-slate-500 text-xs"></i>
-                                <input type="text" id="customCtaInput" maxlength="160" placeholder="Kosongkan untuk CTA default platform, atau tulis CTA Anda sendiri..." class="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 focus:border-brand-500 rounded-xl text-xs text-white placeholder-slate-500 outline-none transition">
+                                <input type="text" id="customCtaInput" maxlength="160" placeholder='Contoh: "Klik keranjang kuning sekarang"' class="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 focus:border-brand-500 rounded-xl text-xs text-white placeholder-slate-500 outline-none transition">
                             </div>
+                            <p class="mt-1 text-[11px] text-slate-400">Contoh: "Klik keranjang kuning sekarang"</p>
                         </div>
                     </div>
 
@@ -488,7 +516,7 @@
                         <span>Voice over diselaraskan secara presisi dengan alur video dan durasi tiap adegan.</span>
                     </p>
 
-                    <div class="relative rounded-2xl overflow-hidden bg-black aspect-[9/16] h-[560px] w-auto mx-auto flex items-center justify-center border border-slate-800 shadow-inner">
+                    <div class="relative rounded-2xl overflow-hidden bg-black aspect-[9/16] w-full max-w-[315px] mx-auto flex items-center justify-center border border-slate-800 shadow-inner">
                         <video id="mainVideo" class="w-full h-full object-cover hidden" playsinline="" crossorigin="anonymous"></video>
                         <!-- (kanvas demo dihapus; visual hanya dari video unggahan) -->
                         
@@ -507,77 +535,63 @@
                         </div>
                     </div>
 
-                    <div class="mt-4 space-y-3">
-                        <div class="flex items-center justify-between gap-2 text-xs text-slate-400">
-                            <span class="font-semibold text-slate-300 flex items-center gap-1.5 min-w-0">
+                    <div class="mt-4 pt-4 border-t border-slate-800/80 space-y-3">
+                        <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                            <span class="font-semibold text-slate-200 flex items-center gap-1.5 min-w-0">
                                 <i class="fa-solid fa-timeline text-brand-400 shrink-0"></i>
-                                <span class="truncate">Naskah &amp; Pola Emosi Voice Over Per Adegan</span>
+                                <span class="truncate">Naskah Voice Over Per Adegan</span>
                             </span>
-                            <span id="totalDurationLabel" class="font-mono shrink-0">00:00 / 00:00</span>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <span id="totalDurationLabel" class="font-mono">00:00 / 00:00</span>
+                                <button onclick="downloadSrtFile()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-semibold text-brand-300 transition flex items-center gap-1">
+                                    <i class="fa-solid fa-closed-captioning"></i> Unduh .SRT
+                                </button>
+                            </div>
                         </div>
-                        <div id="scenesContainer" class="space-y-2 max-h-64 overflow-y-auto pr-1">
+                        <div id="scenesContainer" class="space-y-2 max-h-72 overflow-y-auto pr-1">
                             <div class="p-4 rounded-xl bg-slate-950/60 border border-slate-800 text-center text-xs text-slate-500">
-                                Naskah dan pola emosi per adegan akan muncul setelah proses pembuatan selesai.
+                                Naskah suara per adegan akan tampil di sini setelah selesai dibuat.
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- CAPTION & AFFILIATE BOX -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-                    <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col justify-between space-y-3">
-                        <div class="space-y-3">
-                            <div class="flex items-center justify-between gap-2">
-                                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-                                    <i class="fa-solid fa-closed-captioning text-brand-400"></i>
-                                    <span>Caption &amp; Hashtag</span>
-                                </h3>
-                                <button onclick="copyCaptionAndHashtags()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700">
-                                    Salin
-                                </button>
-                            </div>
-                            <div>
-                                <textarea id="captionOutput" rows="3" class="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 outline-none resize-none" placeholder="Caption..."></textarea>
-                            </div>
-                            <div>
-                                <div id="hashtagsOutput" class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-brand-400 font-medium">
-                                    #RacunShopee #Affiliate
-                                </div>
-                            </div>
+                <!-- HASIL SIAP POSTING (SIMPLE & MUDAH DIMENGERTI) -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <h3 class="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2">
+                            <i class="fa-solid fa-share-nodes text-brand-400"></i>
+                            <span>Hasil Siap Posting</span>
+                        </h3>
+                        <button onclick="copyCaptionAndHashtags()" class="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition flex items-center gap-1.5 shrink-0">
+                            <i class="fa-regular fa-copy"></i> Salin Caption &amp; Hashtag
+                        </button>
+                    </div>
+
+                    <div class="space-y-3">
+                        <div>
+                            <label for="captionOutput" class="block text-[11px] font-semibold text-slate-400 mb-1">Caption Promosi</label>
+                            <textarea id="captionOutput" rows="3" class="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 focus:border-brand-500 text-xs sm:text-sm text-slate-200 outline-none resize-none leading-relaxed" placeholder="Caption promosi akan muncul di sini..."></textarea>
                         </div>
-                        <div class="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
-                            <span>TikTok &amp; Reels Ready</span>
-                            <button onclick="downloadSrtFile()" class="text-brand-400 hover:underline font-medium">Unduh .SRT</button>
+                        <div>
+                            <span class="block text-[11px] font-semibold text-slate-400 mb-1">Hashtag</span>
+                            <div id="hashtagsOutput" class="px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-brand-400 font-medium break-words">
+                                #RacunShopee #Affiliate
+                            </div>
                         </div>
                     </div>
 
-                    <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col justify-between space-y-4">
-                        <div class="space-y-3">
-                            <div class="flex items-center justify-between gap-2">
-                                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-                                    <i class="fa-solid fa-bag-shopping text-amber-400"></i>
-                                    <span>Link Affiliate</span>
-                                </h3>
-                                <span class="px-2 py-0.5 text-[10px] font-bold bg-amber-500/20 text-amber-300 rounded-full">Komisi</span>
-                            </div>
-                            <div class="p-3.5 rounded-2xl bg-slate-950 border border-amber-500/30 space-y-3">
-                                <div class="flex items-start gap-3">
-                                    <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
-                                        <i class="fa-solid fa-cart-shopping"></i>
-                                    </div>
-                                    <div class="min-w-0 flex-1">
-                                        <h4 id="affiliateCardTitle" class="text-xs sm:text-sm font-bold text-white truncate">Produk Pilihan</h4>
-                                        <p class="text-[11px] text-slate-300">Cek promo diskon hari ini!</p>
-                                    </div>
-                                </div>
-                                <div class="p-2 rounded-xl bg-black/50 border border-slate-800 flex items-center justify-between gap-2">
-                                    <span id="affiliateLinkDisplay" class="text-xs font-mono text-amber-300 truncate">https://shope.ee/...</span>
-                                    <button onclick="copyAffiliateBox()" class="px-2 py-1 rounded bg-amber-500 text-slate-950 font-bold text-xs">Salin</button>
-                                </div>
-                            </div>
+                    <div class="pt-3 border-t border-slate-800/80 space-y-2">
+                        <div class="flex items-center gap-1.5 text-xs text-slate-300 min-w-0">
+                            <i class="fa-solid fa-link text-amber-400 shrink-0"></i>
+                            <span class="font-semibold shrink-0">Link Affiliate:</span>
+                            <span id="affiliateCardTitle" class="text-slate-400 truncate">Produk Pilihan</span>
                         </div>
-                        <div class="text-[11px] text-slate-400 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                            <i class="fa-solid fa-lightbulb text-amber-400 mr-1"></i> Tempelkan link ini di komentar pertama atau bio.
+                        <div class="p-2 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2">
+                            <span id="affiliateLinkDisplay" class="text-xs font-mono text-amber-300 truncate flex-1">https://shope.ee/...</span>
+                            <button onclick="copyAffiliateBox()" class="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition shrink-0 flex items-center gap-1">
+                                <i class="fa-regular fa-copy"></i> Salin Link
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -586,15 +600,15 @@
 
         <!-- TAB 2: RIWAYAT HASIL GENERATE -->
         <div id="tabHistoryView" class="hidden space-y-4 max-w-4xl mx-auto">
-            <div class="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl">
-                <div>
+            <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl">
+                <div class="min-w-0 flex-1">
                     <h2 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-                        <i class="fa-solid fa-clock-rotate-left text-brand-400"></i>
+                        <i class="fa-solid fa-clock-rotate-left text-brand-400 shrink-0"></i>
                         <span>Riwayat Proyek Voice Over &amp; Affiliate</span>
                     </h2>
                     <p class="text-xs text-slate-400 mt-0.5">Daftar seluruh video dan naskah voice over yang pernah Anda buat</p>
                 </div>
-                <button onclick="clearHistoryRecords()" class="px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-semibold transition flex items-center gap-1.5">
+                <button onclick="clearHistoryRecords()" class="px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-semibold transition flex items-center gap-1.5 shrink-0">
                     <i class="fa-solid fa-trash-can"></i> Hapus Semua
                 </button>
             </div>

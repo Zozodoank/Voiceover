@@ -1,3 +1,5 @@
+const NAV_BTN_BASE = "px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition flex items-center gap-1 sm:gap-1.5 whitespace-nowrap";
+
 // public/js/ui.js - Navigasi tab utama & notifikasi toast
 function switchMainTab(tabName) {
     const studioView = document.getElementById('tabStudioView');
@@ -5,16 +7,19 @@ function switchMainTab(tabName) {
     const navStudioBtn = document.getElementById('navStudioBtn');
     const navHistoryBtn = document.getElementById('navHistoryBtn');
 
+    const activeCls = NAV_BTN_BASE + " bg-brand-600 text-white";
+    const idleCls = NAV_BTN_BASE + " text-slate-400 hover:text-white";
+
     if (tabName === 'studio') {
         studioView.classList.remove('hidden');
         historyView.classList.add('hidden');
-        navStudioBtn.className = "px-2.5 py-1.5 rounded-lg text-xs font-bold bg-brand-600 text-white transition flex items-center gap-1";
-        navHistoryBtn.className = "px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition flex items-center gap-1";
+        navStudioBtn.className = activeCls;
+        navHistoryBtn.className = idleCls;
     } else {
         studioView.classList.add('hidden');
         historyView.classList.remove('hidden');
-        navHistoryBtn.className = "px-2.5 py-1.5 rounded-lg text-xs font-bold bg-brand-600 text-white transition flex items-center gap-1";
-        navStudioBtn.className = "px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition flex items-center gap-1";
+        navHistoryBtn.className = activeCls;
+        navStudioBtn.className = idleCls;
         renderHistoryList();
     }
 }
